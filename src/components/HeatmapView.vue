@@ -25,10 +25,10 @@ const viewerRef = inject('cesiumViewer', ref(null))
 
 const refreshHeatmap = async () => {
     console.log('刷新热力图')
-    // 2秒后执行一次热力图刷新
+    // 1秒后执行一次热力图刷新
     setTimeout(() => {
         initHeatmap()
-    }, 2000)
+    }, 1000)
 }
 
 defineExpose({ refreshHeatmap })
