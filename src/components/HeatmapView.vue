@@ -25,8 +25,8 @@ const viewerRef = inject('cesiumViewer', ref(null))
 
 const refreshHeatmap = async () => {
     console.log('刷新热力图')
-    // 每2秒自动刷新热力图，建议在合适时机 clearInterval
-    setInterval(() => {
+    // 2秒后执行一次热力图刷新
+    setTimeout(() => {
         initHeatmap()
     }, 2000)
 }
@@ -74,17 +74,16 @@ onMounted(() => {
 
     console.log('onMounted viewerRef.value:', viewerRef.value)
     // 只在父容器显示时初始化
-    const container = document.getElementById('heatmapContainer');
-    if (viewerRef && typeof viewerRef.value !== 'undefined' && viewerRef.value && container && container.offsetParent !== null) {
-        initHeatmap()
-    }
+
 })
 
 watch(() => viewerRef.value, (val) => {
     const container = document.getElementById('heatmapContainer');
-    if (viewerRef && typeof val !== 'undefined' && val && container && container.offsetParent !== null) {
-        initHeatmap()
-    }
+    // if (viewerRef && typeof val !== 'undefined' && val && container) {
+    //     if (container.offsetWidth > 0 && container.offsetHeight > 0) {
+    //         initHeatmap();
+    //     }
+    // }
 })
 
 onUnmounted(() => {

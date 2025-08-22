@@ -1,9 +1,6 @@
-import * as Cesium from 'cesium'
-import h337 from 'heatmap.js';
+import * as Cesium from 'cesium';
 
-window.h337 = h337;
-
-export default class CesiumHeatmap {
+export default class CesiumHeatmap_canvas2d {
     /**
      * @param options.viewer 已初始化的 Cesium Viewer（必填）
      * @param options.tileset 可选 Tileset 实例
@@ -18,68 +15,77 @@ export default class CesiumHeatmap {
         this.tileset = options.tileset || null;
         this.heatmapContainerId = options.heatmapContainerId;
         this.dataFile = options.dataFile;
-        this.radius = options.radius || 50;
+        this.radius = options.radius || 20;
         this.type = options.type || 'building';
 
-        this.heatmapInstance = null;
+        this.canvas = null;
+        this.ctx = null;
         this.buildings = [];
         this.drones = [];
         this.heatmapData = [];
         this.lastUpdate = 0;
-        // 移除 currentData 的预定义，每次创建新对象
+
+        // 颜色渐变
+        this.gradient = {
+            0.1: 'blue',
+            0.3: 'cyan',
+            0.5: 'lime',
+            0.7: 'yellow',
+            1.0: 'red'
+        };
     }
 
     async init() {
-        this.createHeatmapInstance();
+        this.createCanvas();
 
         // 如果是建筑物类型并且提供数据文件，则加载建筑物
         if (this.type === 'building' && this.dataFile) {
             await this.loadBuildings();
         }
-        // 绑定渲染更新
-        this.viewer.scene.postRender.addEventListener(() => this.updateHeatmap());
 
-        // 监听 resize：销毁并重建 heatmap
+        // 监听 resize
         this.resizeHandler = () => {
-            this.createHeatmapInstance();
-            this.updateHeatmap();
+            this.resizeCanvas();
         };
         window.addEventListener('resize', this.resizeHandler);
 
         console.log('CesiumHeatmap 初始化完成，类型:', this.type);
-        // 初始化后立即渲染一次热力图，确保首次显示
+        // 初始化后立即渲染一次热力图
         this.updateHeatmap();
     }
 
-    // ========== 创建 heatmap 实例 ==========
-    createHeatmapInstance() {
+    // ========== 创建 canvas ==========
+    createCanvas() {
         const container = document.getElementById(this.heatmapContainerId);
         if (!container) throw new Error('热力图容器未找到');
-        container.innerHTML = ''; // 清空旧内容
 
-        // 创建新的容器元素
-        const heatmapDiv = document.createElement('div');
-        heatmapDiv.style.position = 'absolute';
-        heatmapDiv.style.top = '0';
-        heatmapDiv.style.left = '0';
-        heatmapDiv.style.width = '100%';
-        heatmapDiv.style.height = '100%';
-        container.appendChild(heatmapDiv);
+        // 清空容器
+        container.innerHTML = '';
 
-        this.heatmapInstance = h337.create({
-            container: heatmapDiv,
-            radius: this.radius,
-            maxOpacity: 0.8,
-            minOpacity: 0.3,
-            blur: 0.85,
-            gradient: {
-                '0.1': 'blue',
-                '0.3': 'cyan',
-                '0.5': 'lime',
-                '0.7': 'yellow',
-                '1.0': 'red'
-            }
-        });
+        // 创建 canvas 元素
+        this.canvas = document.createElement('canvas');
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.top = '0';
+        this.canvas.style.left = '0';
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.pointerEvents = 'none'; // 允许鼠标事件穿透
+        container.appendChild(this.canvas);
+
+        // 设置 canvas 尺寸
+        this.resizeCanvas();
+
+        // 获取 2D 上下文
+        this.ctx = this.canvas.getContext('2d');
+    }
+
+    // 调整 canvas 尺寸
+    resizeCanvas() {
+        const container = document.getElementById(this.heatmapContainerId);
+        if (container && this.canvas) {
+            this.canvas.width = container.offsetWidth;
+            this.canvas.height = container.offsetHeight;
+        }
     }
 
     // ========== 建筑物数据加载 ==========
@@ -114,7 +120,7 @@ export default class CesiumHeatmap {
         return buildings.map(b => ({
             lng: b.lng,
             lat: b.lat,
-            value: Math.floor(b.occupants / maxOcc * 100)
+            value: b.occupants / maxOcc // 归一化到 0-1
         }));
     }
 
@@ -132,76 +138,109 @@ export default class CesiumHeatmap {
         return drones.map(d => ({
             lng: d.lng,
             lat: d.lat,
-            value: Math.floor(d.height / maxHeight * 100)
+            value: d.height / maxHeight // 归一化到 0-1
         }));
+    }
+
+    // 获取颜色值
+    getColor(value) {
+        if (value <= 0.1) return this.gradient[0.1];
+        if (value <= 0.3) return this.interpolateColor(this.gradient[0.1], this.gradient[0.3], (value - 0.1) / 0.2);
+        if (value <= 0.5) return this.interpolateColor(this.gradient[0.3], this.gradient[0.5], (value - 0.3) / 0.2);
+        if (value <= 0.7) return this.interpolateColor(this.gradient[0.5], this.gradient[0.7], (value - 0.5) / 0.2);
+        return this.interpolateColor(this.gradient[0.7], this.gradient[1.0], (value - 0.7) / 0.3);
+    }
+
+    // 颜色插值
+    interpolateColor(color1, color2, factor) {
+        const hex = color => {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+            return result ? [
+                parseInt(result[1], 16),
+                parseInt(result[2], 16),
+                parseInt(result[3], 16)
+            ] : [0, 0, 0];
+        };
+
+        const rgb1 = hex(color1);
+        const rgb2 = hex(color2);
+
+        const r = Math.round(rgb1[0] + (rgb2[0] - rgb1[0]) * factor);
+        const g = Math.round(rgb1[1] + (rgb2[1] - rgb1[1]) * factor);
+        const b = Math.round(rgb1[2] + (rgb2[2] - rgb1[2]) * factor);
+
+        return `rgb(${r},${g},${b})`;
     }
 
     // ========== 更新热力图 ==========
     updateHeatmap() {
-        if (!this.heatmapInstance || !this.heatmapData.length) return;
+        if (!this.ctx || !this.heatmapData.length) return;
 
         const now = performance.now();
         if (now - this.lastUpdate < 200) return; // 节流
         this.lastUpdate = now;
-        // 每次创建新的数据数组，避免修改只读属性
-        const heatmapDataPoints = [];
 
+        // 清除画布
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        let visiblePoints = 0;
+
+        // 绘制热力点
         this.heatmapData.forEach(point => {
             const pos = Cesium.Cartesian3.fromDegrees(point.lng, point.lat);
             const pixel = this.viewer.scene.cartesianToCanvasCoordinates(pos);
+
             if (pixel && isFinite(pixel.x) && isFinite(pixel.y) &&
                 pixel.x >= 0 && pixel.y >= 0 &&
-                pixel.x < this.viewer.canvas.clientWidth &&
-                pixel.y < this.viewer.canvas.clientHeight
+                pixel.x < this.canvas.width &&
+                pixel.y < this.canvas.height
             ) {
-                heatmapDataPoints.push({
-                    x: Math.floor(pixel.x),
-                    y: Math.floor(pixel.y),
-                    value: point.value
-                });
+                visiblePoints++;
+
+                const x = Math.floor(pixel.x);
+                const y = Math.floor(pixel.y);
+                const color = this.getColor(point.value);
+                const alpha = 0.3 + point.value * 0.5; // 透明度根据值变化
+
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, this.radius, 0, 2 * Math.PI);
+
+                // 创建径向渐变
+                const gradient = this.ctx.createRadialGradient(x, y, 0, x, y, this.radius);
+                gradient.addColorStop(0, color.replace('rgb', 'rgba').replace(')', `,${alpha})`));
+                gradient.addColorStop(1, color.replace('rgb', 'rgba').replace(')', ',0)'));
+
+                this.ctx.fillStyle = gradient;
+                this.ctx.fill();
             }
         });
-        //console.log('热力图点数据:', heatmapDataPoints);
-        console.log('热力图点数:', heatmapDataPoints.length)
 
-        // 创建完全新的数据对象
-        if (heatmapDataPoints.length > 0) {
-            try {
-                // 使用全新的对象，确保没有共享引用
-                const heatmapData = {
-                    max: 100,
-                    min: 0,
-                    data: heatmapDataPoints
-                };
-
-                this.heatmapInstance.setData(heatmapData);
-            } catch (e) {
-                console.error('heatmap setData error:', e);
-            }
-        }
+        console.log('热力图点数:', visiblePoints);
     }
 
     // 动态修改半径
     setRadius(radius) {
         this.radius = radius;
-        this.createHeatmapInstance();
         this.updateHeatmap();
     }
 
     // 清理方法
     destroy() {
-        if (this.heatmapInstance) {
+        if (this.canvas) {
             const container = document.getElementById(this.heatmapContainerId);
-            if (container) {
-                container.innerHTML = '';
+            if (container && container.contains(this.canvas)) {
+                container.removeChild(this.canvas);
             }
-            this.heatmapInstance = null;
+            this.canvas = null;
+            this.ctx = null;
         }
-        // 正确移除 resize 监听器
+
+        // 移除 resize 监听器
         if (this.resizeHandler) {
             window.removeEventListener('resize', this.resizeHandler);
             this.resizeHandler = null;
         }
     }
 }
-export { CesiumHeatmap };
+
+export { CesiumHeatmap_canvas2d };
