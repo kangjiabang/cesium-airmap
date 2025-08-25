@@ -7,6 +7,9 @@
                 <DronePathDrawer v-if="viewer" :viewer="viewer" ref="dronePathDrawer" />
                 <DroneFlyController v-if="viewer" :viewer="viewer" :pathPoints="dronePathPoints"
                     :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+
+                <DroneReplayController v-if="viewer" :viewer="viewer" :pathPoints="dronePathPoints"
+                    :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
                 <!-- 热力图开关按钮分组，始终在“开始无人机飞行”按钮下方 -->
                 <div class="heatmap-switch-group">
                     <div class="heatmap-switch">
@@ -28,14 +31,16 @@
     left: 20px;
     z-index: 1000;
 }
+
 .heatmap-switch-group {
     margin-top: 16px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
 }
+
 .heatmap-switch {
-    background: rgba(42,42,42,0.8);
+    background: rgba(42, 42, 42, 0.8);
     color: white;
     padding: 8px;
     border-radius: 6px;
@@ -60,6 +65,7 @@ import AirspaceDrawer from '@/components/AirspaceDrawer.vue'
 import * as Cesium from 'cesium'
 import DronePathDrawer from './DronePathDrawer.vue'
 import DroneFlyController from './DroneFlyController.vue'
+import DroneReplayController from './DroneReplayController.vue'
 
 const cesiumContainer = ref(null)
 const viewer = ref(null)
