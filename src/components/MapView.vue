@@ -10,6 +10,8 @@
 
                 <DroneReplayController v-if="viewer" :viewer="viewer" :pathPoints="dronePathPoints"
                     :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+                <RainEffect v-if="viewer" :viewer="viewer" />
+                <SnowEffect v-if="viewer" :viewer="viewer" />
                 <!-- 热力图开关按钮分组，始终在"开始无人机飞行"按钮下方 -->
                 <div class="heatmap-switch-group">
                     <div class="heatmap-switch">
@@ -18,9 +20,10 @@
                         </label>
                     </div>
                 </div>
+
             </template>
         </AirspaceDrawer>
-        <RainEffect v-if="viewer" :viewer="viewer" />
+
     </div>
 
     <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
@@ -68,6 +71,7 @@ import DronePathDrawer from './DronePathDrawer.vue'
 import DroneFlyController from './DroneFlyController.vue'
 import DroneReplayController from './DroneReplayController.vue'
 import RainEffect from './RainEffect.vue'
+import SnowEffect from './SnowEffect.vue'
 
 const cesiumContainer = ref(null)
 const viewer = ref(null)

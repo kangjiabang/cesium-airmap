@@ -215,14 +215,19 @@ defineExpose({ startRain, stopRain, toggleRain, isRaining })
 
 <style scoped>
 .rain-control {
-    position: relative;
-    top: 20px;
-    right: 20px;
-    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 8px;
+    color: white;
+    margin-top: 8px;
 }
 
+
 .control-panel {
-    background: rgba(0, 0, 0, 0.8);
+
     border-radius: 8px;
     padding: 16px;
     color: white;
