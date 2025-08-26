@@ -108,6 +108,42 @@ const finishDrawing = (positions) => {
                 minimumPixelSize: 128, // 更大像素尺寸
                 maximumScale: 200,     // 更大缩放比例
             },
+            // 添加标签显示无人机信息
+            label: new Cesium.LabelGraphics({
+                text: new Cesium.CallbackProperty(() => {
+                    // 获取无人机当前位置
+                    const position = droneEntity.value?.position?.getValue(props.viewer.clock.currentTime);
+                    if (!position) return "无人机信息\n准备起飞";
+                    
+                    // 计算高度
+                    const cartographic = Cesium.Cartographic.fromCartesian(position);
+                    const height = cartographic?.height?.toFixed(1) || '0.0';
+                    
+                    // 返回显示文本
+                    return `无人机信息\n高度: ${height}m\n速度: 0 m/s\n电量: 100%`;
+                }, false),
+                font: new Cesium.CallbackProperty(() => {
+                    // 根据无人机模型的像素大小动态调整字体大小
+                    const model = droneEntity.value?.model;
+                    if (model) {
+                        // 获取模型的像素大小
+                        const pixelSize = model.pixelSize?.getValue(props.viewer.clock.currentTime) || model.minimumPixelSize || 64;
+                        // 根据像素大小计算字体大小，最小12px，最大不超过24px
+                        const fontSize = Math.max(12, Math.min(24, Math.floor(pixelSize / 8)));
+                        return `${fontSize}px sans-serif`;
+                    }
+                    return "14px sans-serif";
+                }, false),
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                pixelOffset: new Cesium.Cartesian2(0, -50),
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+                translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
+                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1) // 添加距离缩放
+            })
         });
         console.log('无人机实体', droneEntity.value);
         // 注意：不自动设置无人机飞行属性，需手动点击按钮后才设置 SampledPositionProperty

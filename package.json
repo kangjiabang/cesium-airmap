@@ -16,6 +16,7 @@
     "@turf/turf": "^7.2.0",
     "cesium": "^1.132.0",
     "heatmap.js": "^2.0.5",
+    "three": "^0.160.1",
     "vue": "^3.5.18",
     "webgl-heatmap": "^0.2.3",
     "wellknown": "^0.5.0"

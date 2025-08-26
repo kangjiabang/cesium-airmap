@@ -10,7 +10,7 @@
 
                 <DroneReplayController v-if="viewer" :viewer="viewer" :pathPoints="dronePathPoints"
                     :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
-                <!-- 热力图开关按钮分组，始终在“开始无人机飞行”按钮下方 -->
+                <!-- 热力图开关按钮分组，始终在"开始无人机飞行"按钮下方 -->
                 <div class="heatmap-switch-group">
                     <div class="heatmap-switch">
                         <label>
@@ -20,6 +20,7 @@
                 </div>
             </template>
         </AirspaceDrawer>
+        <RainEffect v-if="viewer" :viewer="viewer" />
     </div>
 
     <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
@@ -66,6 +67,7 @@ import * as Cesium from 'cesium'
 import DronePathDrawer from './DronePathDrawer.vue'
 import DroneFlyController from './DroneFlyController.vue'
 import DroneReplayController from './DroneReplayController.vue'
+import RainEffect from './RainEffect.vue'
 
 const cesiumContainer = ref(null)
 const viewer = ref(null)
@@ -100,6 +102,15 @@ const initMap = async () => {
     viewer.value = new Cesium.Viewer("cesiumContainer", {
         terrainProvider: terrainProvider
     });
+
+    // 或者运行时动态启用
+    //viewer.scene.globe.translucencyEnabled = true;
+    // viewer.scene.globe.translucencyThickness = 15000.0;
+
+    // 3D地形和建筑物
+    //viewer.scene.globe.enableLighting = true;
+    //viewer.scene.globe.depthTestAgainstTerrain = false;
+
     // 加载 3D Tileset
     const tileset = viewer.value.scene.primitives.add(
         await Cesium.Cesium3DTileset.fromUrl(
@@ -112,5 +123,4 @@ const initMap = async () => {
 onUnmounted(() => {
     viewer.value?.destroy()
 })
-// ...existing code...
 </script>
