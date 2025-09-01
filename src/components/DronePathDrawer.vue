@@ -1,10 +1,10 @@
 <!-- DronePathDrawer.vue -->
 <template>
     <div class="control-group drone-group">
-        <button @click="startDrawing">开始绘制航线</button>
+        <button @click="startDrawing">{{ drawing ? '航线绘制中' : '开始绘制航线' }}</button>
         <button @click="clearAll">清除所有</button>
-        <div v-if="pathPoints.length" class="drone-info">
-            <span>航线点数：{{ pathPoints.length }}</span>
+        <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
+            <span>航线点数：{{ pathPoints.length || 0 }}</span>
         </div>
     </div>
 </template>
@@ -114,11 +114,11 @@ const finishDrawing = (positions) => {
                     // 获取无人机当前位置
                     const position = droneEntity.value?.position?.getValue(props.viewer.clock.currentTime);
                     if (!position) return "无人机信息\n准备起飞";
-                    
+
                     // 计算高度
                     const cartographic = Cesium.Cartographic.fromCartesian(position);
                     const height = cartographic?.height?.toFixed(1) || '0.0';
-                    
+
                     // 返回显示文本
                     return `无人机信息\n高度: ${height}m\n速度: 0 m/s\n电量: 100%`;
                 }, false),
@@ -195,5 +195,6 @@ defineExpose({ pathPoints, droneEntity });
 
 .drone-info {
     white-space: nowrap;
+    color: white;
 }
 </style>

@@ -1,61 +1,96 @@
 <!-- MapView.vue -->
 <template>
     <div class="cesium" id="cesiumContainer" style="width: 100%; height: 100vh;"></div>
-    <div class="unified-controls-wrapper">
-        <AirspaceDrawer v-if="viewer" :viewer="viewer" ref="airspaceDrawer">
-            <template #drone-path>
-                <DronePathDrawer v-if="viewer" :viewer="viewer" ref="dronePathDrawer" />
 
-                <!-- 飞行控制器 - 根据菜单控制显示 -->
-                <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
-                    :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
-
-                <!-- 回放控制器 - 根据菜单控制显示 -->
-                <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer"
-                    :pathPoints="dronePathPoints" :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
-
-                <!-- 雨效果 - 根据菜单控制显示 -->
-                <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
-
-                <!-- 雪效果 - 根据菜单控制显示 -->
-                <SnowEffect v-if="viewer && showSnowEffect" :viewer="viewer" />
-
-                <!-- 树状菜单 -->
-                <el-tree class="menu-tree" :data="menuTreeData" show-checkbox node-key="id" default-expand-all
-                    :default-checked-keys="defaultCheckedKeys" @check="handleCheck" />
-            </template>
-        </AirspaceDrawer>
+    <!-- 菜单单独放置 -->
+    <div class="menu-wrapper">
+        <el-tree class="menu-tree" :data="menuTreeData" show-checkbox node-key="id" default-expand-all
+            :default-checked-keys="defaultCheckedKeys" :check-strictly="true" @check="handleCheck" />
     </div>
 
-    <!-- 热力图视图 -->
-    <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
+    <!-- 功能控件容器 - 与菜单分离 -->
+    <div class="controls-wrapper">
+        <AirspaceDrawer v-if="viewer && isDrawingAirspace" :viewer="viewer" ref="airspaceDrawer" />
+
+        <DronePathDrawer v-if="viewer && isDrawingFlightPath" :viewer="viewer" ref="dronePathDrawer" />
+
+        <!-- 飞行控制器 - 根据菜单控制显示 -->
+        <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
+            :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+
+        <!-- 回放控制器 - 根据菜单控制显示 -->
+        <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer" :pathPoints="dronePathPoints"
+            :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+
+        <!-- 雨效果 - 根据菜单控制显示 -->
+        <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
+
+        <!-- 雪效果 - 根据菜单控制显示 -->
+        <SnowEffect v-if="viewer && showSnowEffect" :viewer="viewer" />
+    </div>
+
+    <!-- 热力图视图 - 在右上角控件区域 -->
+    <div class="heatmap-wrapper">
+        <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
+    </div>
 </template>
 
 <style>
-.unified-controls-wrapper {
+/* 菜单容器 - 固定位置 */
+.menu-wrapper {
     position: absolute;
     top: 20px;
     left: 20px;
+    z-index: 1100;
+    /* 最高层级 */
+}
+
+/* 功能控件容器 - 右上角显示 */
+.controls-wrapper {
+    position: absolute;
+    top: 20px;
+    right: 20px;
     z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-end;
+    /* 右对齐 */
+}
+
+/* 热力图容器 - 也在右上角，但在控件下方 */
+.heatmap-wrapper {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 999;
+    /* 比控件稍低 */
+    margin-top: 300px;
+    /* 给控件留出空间 */
 }
 
 .menu-tree {
-    background: rgba(42, 42, 42, 0.9);
+    background: rgba(42, 42, 42, 0.95);
     color: white;
     padding: 12px;
     border-radius: 8px;
-    margin-top: 16px;
     min-width: 200px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 220px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    /* 毛玻璃效果 */
 }
 
 .menu-tree :deep(.el-tree-node__content) {
     color: white;
     background-color: transparent;
+    height: 32px;
+    line-height: 32px;
 }
 
 .menu-tree :deep(.el-tree-node__content:hover) {
     background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
 }
 
 .menu-tree :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
@@ -69,6 +104,137 @@
 
 .menu-tree :deep(.el-tree-node__label) {
     font-size: 14px;
+    font-weight: 500;
+}
+
+.menu-tree :deep(.el-tree-node.is-disabled > .el-tree-node__content .el-checkbox) {
+    display: none !important;
+}
+
+.menu-tree :deep(.el-tree-node.is-disabled > .el-tree-node__content .el-tree-node__label) {
+    color: #b0b0b0 !important;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+/* 为控件添加统一的样式 */
+.controls-wrapper>* {
+    background: rgba(42, 42, 42, 0.9);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    min-width: 280px;
+    max-width: 350px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .menu-wrapper {
+        top: 10px;
+        left: 10px;
+    }
+
+    .controls-wrapper {
+        top: 10px;
+        right: 10px;
+        max-width: 280px;
+    }
+
+    .heatmap-wrapper {
+        top: 10px;
+        right: 10px;
+        margin-top: 250px;
+    }
+
+    .menu-tree {
+        min-width: 180px;
+        max-width: 200px;
+    }
+
+    .controls-wrapper>* {
+        min-width: 250px;
+        max-width: 280px;
+    }
+}
+
+@media (max-width: 480px) {
+    .menu-wrapper {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+    }
+
+    .controls-wrapper {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        margin-top: 200px;
+        /* 在菜单下方显示 */
+        align-items: stretch;
+    }
+
+    .heatmap-wrapper {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        margin-top: 450px;
+    }
+
+    .menu-tree {
+        width: 100%;
+        max-width: none;
+    }
+
+    .controls-wrapper>* {
+        min-width: auto;
+        max-width: none;
+        width: 100%;
+    }
+}
+
+/* 折叠菜单功能 */
+.menu-tree {
+    transition: all 0.3s ease-in-out;
+}
+
+.menu-tree.collapsed {
+    transform: translateX(-180px);
+}
+
+.menu-tree::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -20px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 40px;
+    background: rgba(42, 42, 42, 0.8);
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1101;
+}
+
+.menu-tree::after {
+    content: "◀";
+    position: absolute;
+    top: 50%;
+    right: -15px;
+    transform: translateY(-50%);
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    z-index: 1102;
+    transition: transform 0.3s ease;
+}
+
+.menu-tree.collapsed::after {
+    content: "▶";
+    transform: translateY(-50%) rotate(0deg);
 }
 </style>
 
@@ -93,6 +259,8 @@ const showRainEffect = ref(false)
 const showSnowEffect = ref(false)
 const showFlyController = ref(false)
 const showReplayController = ref(false)
+const isDrawingAirspace = ref(false)
+const isDrawingFlightPath = ref(false)
 
 const heatmapViewRef = ref(null)
 
@@ -133,19 +301,30 @@ const noFlyZones = computed(() => {
 const menuTreeData = ref([
     {
         id: 1,
-        label: "视觉效果",
+        label: "🚁 空域管理",
+        disabled: true, // 父节点不可选择
         children: [
-            { id: 11, label: "显示热力图", type: "heatmap" },
-            { id: 12, label: "下雨特效", type: "rain" },
-            { id: 13, label: "下雪特效", type: "snow" }
+            { id: 11, label: "开始绘制空域", type: "drawAirspace" },
+            { id: 12, label: "开始绘制航线", type: "drawFlightPath" }
         ]
     },
     {
         id: 2,
-        label: "无人机控制",
+        label: "🎨 视觉效果",
+        disabled: true, // 父节点不可选择
         children: [
-            { id: 21, label: "飞行控制器", type: "fly" },
-            { id: 22, label: "回放控制器", type: "replay" }
+            { id: 21, label: "显示热力图", type: "heatmap" },
+            { id: 22, label: "下雨特效", type: "rain" },
+            { id: 23, label: "下雪特效", type: "snow" }
+        ]
+    },
+    {
+        id: 3,
+        label: "🎮 无人机控制",
+        disabled: true, // 父节点不可选择
+        children: [
+            { id: 31, label: "飞行控制器", type: "fly" },
+            { id: 32, label: "回放控制器", type: "replay" }
         ]
     }
 ])
@@ -158,66 +337,190 @@ const menuTreeData = ref([
 const handleCheck = (checkedNodes, checkedInfo) => {
     const { checkedKeys } = checkedInfo
 
-    // 更新各功能状态
-    showHeatmap.value = checkedKeys.includes(11)
-    showRainEffect.value = checkedKeys.includes(12)
-    showSnowEffect.value = checkedKeys.includes(13)
-    showFlyController.value = checkedKeys.includes(21)
-    showReplayController.value = checkedKeys.includes(22)
+    // 更新空域管理状态
+    isDrawingAirspace.value = checkedKeys.includes(11)
+    isDrawingFlightPath.value = checkedKeys.includes(12)
 
-    // 互斥逻辑：飞行控制器和回放控制器不能同时开启
+    // 更新视觉效果状态
+    showHeatmap.value = checkedKeys.includes(21)
+    showRainEffect.value = checkedKeys.includes(22)
+    showSnowEffect.value = checkedKeys.includes(23)
+
+    // 更新控制器状态
+    showFlyController.value = checkedKeys.includes(31)
+    showReplayController.value = checkedKeys.includes(32)
+
+    // 空域管理互斥逻辑：绘制空域和绘制航线不能同时进行
+    /* if (isDrawingAirspace.value && isDrawingFlightPath.value) {
+        const airspaceIndex = checkedKeys.indexOf(11)
+        const flightPathIndex = checkedKeys.indexOf(12)
+
+        if (airspaceIndex > flightPathIndex) {
+            // 绘制空域是最新选中的，取消绘制航线
+            isDrawingFlightPath.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(12, false)
+            }, 0)
+        } else {
+            // 绘制航线是最新选中的，取消绘制空域
+            isDrawingAirspace.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(11, false)
+            }, 0)
+        }
+    } */
+
+    // 控制器互斥逻辑：飞行控制器和回放控制器不能同时开启
     if (showFlyController.value && showReplayController.value) {
-        // 如果两个都被选中，保留最新选中的，取消另一个
-        if (checkedKeys.includes(21) && checkedKeys.includes(22)) {
-            // 找出哪个是最新选中的
-            const flyIndex = checkedKeys.indexOf(21)
-            const replayIndex = checkedKeys.indexOf(22)
+        const flyIndex = checkedKeys.indexOf(31)
+        const replayIndex = checkedKeys.indexOf(32)
 
-            if (flyIndex > replayIndex) {
-                // 飞行控制器是最新选中的，取消回放控制器
-                showReplayController.value = false
-                // 从树组件中取消勾选
-                setTimeout(() => {
-                    document.querySelector('.menu-tree').__vue__?.setChecked(22, false)
-                }, 0)
-            } else {
-                // 回放控制器是最新选中的，取消飞行控制器
-                showFlyController.value = false
-                setTimeout(() => {
-                    document.querySelector('.menu-tree').__vue__?.setChecked(21, false)
-                }, 0)
-            }
+        if (flyIndex > replayIndex) {
+            // 飞行控制器是最新选中的，取消回放控制器
+            showReplayController.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(32, false)
+            }, 0)
+        } else {
+            // 回放控制器是最新选中的，取消飞行控制器
+            showFlyController.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(31, false)
+            }, 0)
         }
     }
 
     // 天气效果互斥：雨和雪不能同时存在
     if (showRainEffect.value && showSnowEffect.value) {
-        const rainIndex = checkedKeys.indexOf(12)
-        const snowIndex = checkedKeys.indexOf(13)
+        const rainIndex = checkedKeys.indexOf(22)
+        const snowIndex = checkedKeys.indexOf(23)
 
         if (rainIndex > snowIndex) {
             // 雨是最新选中的，取消雪
             showSnowEffect.value = false
             setTimeout(() => {
-                document.querySelector('.menu-tree').__vue__?.setChecked(13, false)
+                document.querySelector('.menu-tree').__vue__?.setChecked(23, false)
             }, 0)
         } else {
             // 雪是最新选中的，取消雨
             showRainEffect.value = false
             setTimeout(() => {
-                document.querySelector('.menu-tree').__vue__?.setChecked(12, false)
+                document.querySelector('.menu-tree').__vue__?.setChecked(22, false)
             }, 0)
         }
     }
 
+    // 处理空域管理功能
+    handleAirspaceManagement()
+
     // 日志输出当前状态（可选，用于调试）
     console.log('Menu状态更新:', {
+        绘制空域: isDrawingAirspace.value,
+        绘制航线: isDrawingFlightPath.value,
         热力图: showHeatmap.value,
         雨效果: showRainEffect.value,
         雪效果: showSnowEffect.value,
         飞行控制器: showFlyController.value,
         回放控制器: showReplayController.value
     })
+}
+
+/**
+ * 处理空域管理功能
+ */
+const handleAirspaceManagement = () => {
+    if (!viewer.value) return
+
+    if (isDrawingAirspace.value) {
+        // 开始绘制空域
+        startDrawingAirspace()
+    } else if (isDrawingFlightPath.value) {
+        // 开始绘制航线
+        startDrawingFlightPath()
+    } else {
+        // 停止绘制
+        stopDrawing()
+    }
+}
+
+/**
+ * 开始绘制空域
+ */
+const startDrawingAirspace = () => {
+    stopDrawing() // 先停止之前的绘制
+
+    console.log('开始绘制空域模式')
+
+    // 如果有 AirspaceDrawer 的绘制方法，调用它
+    if (airspaceDrawer.value && typeof airspaceDrawer.value.startDrawing === 'function') {
+        airspaceDrawer.value.startDrawing()
+    } else {
+        // 备用方案：直接使用 Cesium 绘制
+        enableCesiumDrawing('airspace')
+    }
+}
+
+/**
+ * 开始绘制航线
+ */
+const startDrawingFlightPath = () => {
+    stopDrawing() // 先停止之前的绘制
+
+    console.log('开始绘制航线模式')
+
+    // 如果有 DronePathDrawer 的绘制方法，调用它
+    if (dronePathDrawer.value && typeof dronePathDrawer.value.startDrawing === 'function') {
+        dronePathDrawer.value.startDrawing()
+    } else {
+        // 备用方案：直接使用 Cesium 绘制
+        enableCesiumDrawing('flightPath')
+    }
+}
+
+/**
+ * 停止绘制
+ */
+const stopDrawing = () => {
+    console.log('停止绘制模式')
+
+    // 停止空域绘制
+    if (airspaceDrawer.value && typeof airspaceDrawer.value.stopDrawing === 'function') {
+        airspaceDrawer.value.stopDrawing()
+    }
+
+    // 停止航线绘制
+    if (dronePathDrawer.value && typeof dronePathDrawer.value.stopDrawing === 'function') {
+        dronePathDrawer.value.stopDrawing()
+    }
+
+    // 移除 Cesium 绘制事件
+    disableCesiumDrawing()
+}
+
+/**
+ * 启用 Cesium 绘制功能（备用方案）
+ */
+const enableCesiumDrawing = (drawType) => {
+    if (!viewer.value) return
+
+    // 设置鼠标样式
+    viewer.value.canvas.style.cursor = 'crosshair'
+
+    // 这里可以添加具体的绘制逻辑
+    // 例如监听鼠标点击事件来创建点、线、面等
+    console.log(`启用 ${drawType} 绘制模式`)
+}
+
+/**
+ * 禁用 Cesium 绘制功能
+ */
+const disableCesiumDrawing = () => {
+    if (!viewer.value) return
+
+    // 恢复鼠标样式
+    viewer.value.canvas.style.cursor = 'default'
+
+    console.log('禁用绘制模式')
 }
 
 /**
@@ -228,11 +531,13 @@ const toggleFeature = (featureType, state = null) => {
     if (!treeRef) return
 
     const featureMap = {
-        heatmap: 11,
-        rain: 12,
-        snow: 13,
-        fly: 21,
-        replay: 22
+        drawAirspace: 11,
+        drawFlightPath: 12,
+        heatmap: 21,
+        rain: 22,
+        snow: 23,
+        fly: 31,
+        replay: 32
     }
 
     const nodeId = featureMap[featureType]
@@ -249,7 +554,12 @@ defineExpose({
     showRainEffect,
     showSnowEffect,
     showFlyController,
-    showReplayController
+    showReplayController,
+    isDrawingAirspace,
+    isDrawingFlightPath,
+    startDrawingAirspace,
+    startDrawingFlightPath,
+    stopDrawing
 })
 
 onMounted(() => {

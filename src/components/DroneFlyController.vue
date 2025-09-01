@@ -1,8 +1,10 @@
 <!-- DroneFlyController.vue -->
 <template>
     <div class="drone-fly-controls">
-        <button @click="startFly" :disabled="!canFly">开始无人机飞行</button>
+        <button @click="startFly" :disabled="!canFly || isFlying">开始无人机飞行</button>
+        <button @click="stopFly" :disabled="!isFlying" class="stop-button">停止无人机飞行</button>
         <span v-if="!canFly" style="color: #888; margin-left: 8px;">请先绘制航线</span>
+        <span v-if="isFlying" style="color: #43a047; margin-left: 8px;">飞行中...</span>
     </div>
 </template>
 
@@ -37,6 +39,10 @@ const props = defineProps({
 })
 
 const canFly = ref(false)
+const isFlying = ref(false)
+let onTickListener = null
+let highlightedBuildingEntity = null
+
 watch(
     [() => props.pathPoints, () => props.droneEntity],
     ([points, drone]) => {
@@ -47,7 +53,9 @@ watch(
 
 const startFly = () => {
     const { viewer, pathPoints, droneEntity } = props
-    if (!viewer || !pathPoints || pathPoints.length < 2 || !droneEntity) return
+    if (!viewer || !pathPoints || pathPoints.length < 2 || !droneEntity || isFlying.value) return
+
+    isFlying.value = true
 
     // 动画飞行
     const property = new Cesium.SampledPositionProperty()
@@ -72,7 +80,6 @@ const startFly = () => {
     const warnDistance = 100;
     const collisionDistance = 20;
     let lastColor = null;
-    let highlightedBuildingEntity = null;
     const detectionRadius = 100;
 
     // 存储上一时刻的位置和时间，用于计算速度
@@ -223,18 +230,16 @@ const startFly = () => {
                     console.error("检测建筑物时出错:", err);
                 });
         }
-    }
 
-    viewer.clock.onTick.addEventListener(onTick);
-
-    // 飞行结束后移除监听
-    viewer.clock.onStop = function () {
-        viewer.clock.onTick.removeEventListener(onTick);
-        if (highlightedBuildingEntity) {
-            viewer.entities.remove(highlightedBuildingEntity);
-            highlightedBuildingEntity = null;
+        // 检查飞行是否结束
+        if (Cesium.JulianDate.greaterThan(viewer.clock.currentTime, viewer.clock.stopTime) ||
+            !viewer.clock.shouldAnimate) {
+            stopFly();
         }
     }
+
+    onTickListener = onTick;
+    viewer.clock.onTick.addEventListener(onTickListener);
 
     droneEntity.position = property;
     droneEntity.orientation = new Cesium.VelocityOrientationProperty(property);
@@ -247,6 +252,42 @@ const startFly = () => {
 
     // 让相机跟随实体
     viewer.trackedEntity = droneEntity;
+};
+
+const stopFly = () => {
+    const { viewer, droneEntity } = props;
+
+    if (!isFlying.value) return;
+
+    // 停止时钟动画
+    viewer.clock.shouldAnimate = false;
+
+    // 移除tick监听器
+    if (onTickListener) {
+        viewer.clock.onTick.removeEventListener(onTickListener);
+        onTickListener = null;
+    }
+
+    // 清理高亮建筑物
+    if (highlightedBuildingEntity) {
+        viewer.entities.remove(highlightedBuildingEntity);
+        highlightedBuildingEntity = null;
+    }
+
+    // 停止跟随
+    viewer.trackedEntity = null;
+
+    // 将无人机位置固定在当前位置
+    if (droneEntity && droneEntity.position) {
+        const currentPosition = droneEntity.position.getValue(viewer.clock.currentTime);
+        if (currentPosition) {
+            droneEntity.position = new Cesium.ConstantPositionProperty(currentPosition);
+            droneEntity.orientation = undefined;
+        }
+    }
+
+    isFlying.value = false;
+    console.log('无人机飞行已停止');
 };
 </script>
 
@@ -271,5 +312,13 @@ const startFly = () => {
 .drone-fly-controls button:disabled {
     background: #ccc;
     cursor: not-allowed;
+}
+
+.stop-button {
+    background: #f44336 !important;
+}
+
+.stop-button:disabled {
+    background: #ccc !important;
 }
 </style>
