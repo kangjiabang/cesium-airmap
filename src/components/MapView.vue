@@ -304,8 +304,8 @@ const menuTreeData = ref([
         label: "🚁 空域管理",
         disabled: true, // 父节点不可选择
         children: [
-            { id: 11, label: "开始绘制空域", type: "drawAirspace" },
-            { id: 12, label: "开始绘制航线", type: "drawFlightPath" }
+            { id: 11, label: "绘制空域", type: "drawAirspace" },
+            { id: 12, label: "绘制航线", type: "drawFlightPath" }
         ]
     },
     {
