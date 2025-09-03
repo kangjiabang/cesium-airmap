@@ -303,25 +303,18 @@ const exitEditMode = () => {
     props.viewer.scene.screenSpaceCameraController.enableTranslate = true;
 };
 
-const clearAll = () => {
-    if (editMode.value) {
-        editMode.value = false;
-        exitEditMode();
-    }
 
+const cleanupEntities = () => {
     const { viewer } = props;
 
-    // 逐个移除
     if (tempPolyline.value) {
         viewer.entities.remove(tempPolyline.value);
         tempPolyline.value = null;
     }
-
     if (finalPolyline.value) {
         viewer.entities.remove(finalPolyline.value);
         finalPolyline.value = null;
     }
-
     if (droneEntity.value) {
         viewer.entities.remove(droneEntity.value);
         droneEntity.value = null;
@@ -330,23 +323,32 @@ const clearAll = () => {
     pathPointEntities.value.forEach(entity => {
         viewer.entities.remove(entity);
     });
-
     pathPointEntities.value = [];
     pathPoints.value = [];
+};
 
-    // 可选：停止事件处理器
+// 在 clearAll 中调用
+const clearAll = () => {
+    if (editMode.value) {
+        editMode.value = false;
+        exitEditMode();
+    }
+
+    cleanupEntities();
+    drawing.value = false;
+};
+
+// 在 onUnmounted 中也调用
+onUnmounted(() => {
     if (handler.value) {
         handler.value.destroy();
         handler.value = null;
     }
-
-    drawing.value = false;
-};
-
-onUnmounted(() => {
-    if (handler.value) handler.value.destroy();
-    if (editHandler.value) editHandler.value.destroy();
-    if (tempPolyline.value) props.viewer.entities.remove(tempPolyline.value);
+    if (editHandler.value) {
+        editHandler.value.destroy();
+        editHandler.value = null;
+    }
+    cleanupEntities();
 });
 
 defineExpose({ pathPoints, droneEntity, editMode });
