@@ -1,39 +1,39 @@
-<!-- MapView.vue -->
-<template>
-    <div class="cesium" id="cesiumContainer" style="width: 100%; height: 100vh;"></div>
+    <!-- MapView.vue -->
+    <template>
+        <div class="cesium" id="cesiumContainer" style="width: 100%; height: 100vh;"></div>
 
-    <!-- 菜单单独放置 -->
-    <div class="menu-wrapper">
-        <el-tree class="menu-tree" :data="menuTreeData" show-checkbox node-key="id" default-expand-all
-            :default-checked-keys="defaultCheckedKeys" :check-strictly="true" @check="handleCheck" />
-    </div>
+        <!-- 菜单单独放置 -->
+        <div class="menu-wrapper">
+            <el-tree class="menu-tree" :data="menuTreeData" show-checkbox node-key="id" default-expand-all
+                :default-checked-keys="defaultCheckedKeys" :check-strictly="true" @check="handleCheck" />
+        </div>
 
-    <!-- 功能控件容器 - 与菜单分离 -->
-    <div class="controls-wrapper">
-        <AirspaceDrawer v-if="viewer && isDrawingAirspace" :viewer="viewer" ref="airspaceDrawer" />
+        <!-- 功能控件容器 - 与菜单分离 -->
+        <div class="controls-wrapper">
+            <AirspaceDrawer v-if="viewer && isDrawingAirspace" :viewer="viewer" ref="airspaceDrawer" />
 
-        <DronePathDrawer v-if="viewer && isDrawingFlightPath" :viewer="viewer" ref="dronePathDrawer" />
+            <DronePathDrawer v-if="viewer && isDrawingFlightPath" :viewer="viewer" ref="dronePathDrawer" />
 
-        <!-- 飞行控制器 - 根据菜单控制显示 -->
-        <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
-            :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+            <!-- 飞行控制器 - 根据菜单控制显示 -->
+            <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
+                :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
 
-        <!-- 回放控制器 - 根据菜单控制显示 -->
-        <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer" :pathPoints="dronePathPoints"
-            :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+            <!-- 回放控制器 - 根据菜单控制显示 -->
+            <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer" :pathPoints="dronePathPoints"
+                :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
 
-        <!-- 雨效果 - 根据菜单控制显示 -->
-        <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
+            <!-- 雨效果 - 根据菜单控制显示 -->
+            <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
 
-        <!-- 雪效果 - 根据菜单控制显示 -->
-        <SnowEffect v-if="viewer && showSnowEffect" :viewer="viewer" />
-    </div>
+            <!-- 雪效果 - 根据菜单控制显示 -->
+            <SnowEffect v-if="viewer && showSnowEffect" :viewer="viewer" />
+        </div>
 
-    <!-- 热力图视图 - 在右上角控件区域 -->
-    <div class="heatmap-wrapper">
-        <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
-    </div>
-</template>
+        <!-- 热力图视图 - 在右上角控件区域 -->
+        <div class="heatmap-wrapper">
+            <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
+        </div>
+    </template>
 
 <style>
 /* 菜单容器 - 固定位置 */
@@ -239,9 +239,9 @@
 </style>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, provide, watch } from "vue"
+import { ref, onMounted, onUnmounted, computed, provide, watch, watchEffect } from "vue"
 import * as Cesium from "cesium"
-import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
+import AirspaceDrawer from "@/components/AirspaceDrawer—bak.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import DroneFlyController from "./DroneFlyController.vue"
 import DroneReplayController from "./DroneReplayController.vue"
@@ -291,10 +291,29 @@ const droneEntity = computed(() => {
 
 // 动态获取禁飞区
 const airspaceDrawer = ref(null)
+const cachedNoFlyZones = ref([])  // 持久化缓存
 const noFlyZones = computed(() => {
-    return airspaceDrawer.value?.airspacePolygons ?? []
+    // 优先使用当前组件的数据，如果没有则使用缓存
+    const currentPolygons = airspaceDrawer.value?.airspacePolygons
+    if (currentPolygons && currentPolygons.length > 0) {
+        return currentPolygons  // 直接返回，不在这里更新缓存
+    }
+    console.log('[Computed] 使用缓存的禁飞区数据:', cachedNoFlyZones.value)
+    return cachedNoFlyZones.value
 })
 
+// 监听数组引用和长度变化
+watch(
+    () => [
+        airspaceDrawer.value?.airspacePolygons,
+        airspaceDrawer.value?.airspacePolygons?.length
+    ],
+    ([newPolygons, newLength]) => {
+        if (newPolygons && newLength > 0) {
+            cachedNoFlyZones.value = newPolygons
+        }
+    }
+)
 /**
  * 菜单树数据
  */
@@ -351,7 +370,7 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     showReplayController.value = checkedKeys.includes(32)
 
     // 空域管理互斥逻辑：绘制空域和绘制航线不能同时进行
-    /* if (isDrawingAirspace.value && isDrawingFlightPath.value) {
+    if (isDrawingAirspace.value && isDrawingFlightPath.value) {
         const airspaceIndex = checkedKeys.indexOf(11)
         const flightPathIndex = checkedKeys.indexOf(12)
 
@@ -368,7 +387,7 @@ const handleCheck = (checkedNodes, checkedInfo) => {
                 document.querySelector('.menu-tree').__vue__?.setChecked(11, false)
             }, 0)
         }
-    } */
+    }
 
     // 控制器互斥逻辑：飞行控制器和回放控制器不能同时开启
     if (showFlyController.value && showReplayController.value) {

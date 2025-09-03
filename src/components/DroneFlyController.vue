@@ -33,8 +33,10 @@ const props = defineProps({
     },
     noFlyZones: {
         type: Array,
-        required: false,
-        default: () => []
+        default: () => {
+            console.log('[Props] noFlyZones 默认值被调用')
+            return []
+        }
     }
 })
 
@@ -156,14 +158,13 @@ const startFly = () => {
             const dist = pointInNoFlyZone(position, props.noFlyZones);
             if (dist < collisionDistance) {
                 console.warn(`已经进入禁飞区，距离：${dist.toFixed(1)}米`);
-                lastColor = droneEntity.model.color;
                 collision_effects(droneEntity);
             } else if (dist < warnDistance) {
                 console.warn(`进入禁飞区预警，距离：${dist.toFixed(1)}米`);
-                lastColor = droneEntity.model.color;
                 warning_effects(droneEntity);
             } else {
-                droneEntity.model.color = lastColor || Cesium.Color.WHITE;
+                console.warn(`远离禁飞区，距离：${dist.toFixed(1)}米`);
+                droneEntity.model.color = Cesium.Color.WHITE;
             }
         }
 

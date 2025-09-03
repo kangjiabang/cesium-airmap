@@ -64,7 +64,7 @@ export function parseWKTCoordinates(wkt) {
     try {
         // 移除可能的引号
         const cleanWkt = wkt.replace(/^"|"$/g, '').trim();
-        console.log('解析WKT:', cleanWkt);
+        //console.log('解析WKT:', cleanWkt);
 
         const match = cleanWkt.match(/\(\(\(([^)]+)\)\)\)/);
         if (!match) {
@@ -99,7 +99,7 @@ export function parseWKTCoordinates(wkt) {
             return null;
         }
 
-        console.log('成功解析坐标:', coordinates);
+        //console.log('成功解析坐标:', coordinates);
         return coordinates;
     } catch (error) {
         console.error('解析 WKT 坐标时出错:', error);

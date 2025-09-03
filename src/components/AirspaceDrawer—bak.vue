@@ -574,6 +574,53 @@ const finishDrawingCustom = (positions) => {
     stopDrawing();
 };
 
+// 生成可拖拽控制点
+const addEditablePoint = (position, onUpdate) => {
+    const { viewer } = props;
+    const controlPoint = viewer.entities.add({
+        position: position,
+        point: {
+            pixelSize: 10,
+            color: Cesium.Color.YELLOW,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        _isAirspaceControl: true,
+    });
+
+    const dragHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    let isDragging = false;
+
+    dragHandler.setInputAction((click) => {
+        const picked = viewer.scene.pick(click.position);
+        if (picked && picked.id === controlPoint) {
+            isDragging = true;
+            viewer.scene.screenSpaceCameraController.enableRotate = false; // 禁止场景旋转
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+    dragHandler.setInputAction((movement) => {
+        if (isDragging) {
+            const newPos = getCartesianFromClick(movement);
+            if (newPos) {
+                controlPoint.position = newPos;
+                onUpdate(newPos); // 更新回调
+            }
+        }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    dragHandler.setInputAction(() => {
+        if (isDragging) {
+            isDragging = false;
+            viewer.scene.screenSpaceCameraController.enableRotate = true;
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+    return controlPoint;
+};
+
 // 添加点标记
 const addPointMarker = (position, index) => {
     const { viewer } = props;
@@ -637,8 +684,28 @@ const makeEditable = (entity) => {
     const heights = getCurrentHeights();
     editBottomHeight.value = heights.bottom;
     editTopHeight.value = heights.top;
+
     console.log('设置空域为可编辑模式');
+
+    // 添加拖拽编辑点
+    if (entity.polygon) {
+        const hierarchy = entity.polygon.hierarchy.getValue(Cesium.JulianDate.now());
+        const positions = hierarchy.positions;
+
+        positions.forEach((pos, idx) => {
+            addEditablePoint(pos, (newPos) => {
+                positions[idx] = newPos;
+                entity.polygon.hierarchy = new Cesium.PolygonHierarchy([...positions]);
+            });
+        });
+    } else if (entity.ellipse) {
+        // 圆：允许拖动圆心
+        addEditablePoint(entity.position.getValue(Cesium.JulianDate.now()), (newPos) => {
+            entity.position = newPos;
+        });
+    }
 };
+
 
 // 更新高度
 const updateHeights = () => {
