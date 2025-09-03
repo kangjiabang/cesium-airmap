@@ -6,7 +6,7 @@
         <button @click="clearAll">清除所有</button>
         <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
-            <span v-if="editMode" class="edit-hint">拖动橙色点编辑航线</span>
+            <span v-if="editMode" class="edit-hint">拖动图标编辑航线</span>
         </div>
     </div>
 </template>
@@ -34,6 +34,10 @@ const pathPointEntities = ref([]);
 const isDragging = ref(false);
 const draggedPointIndex = ref(-1);
 
+// 自定义图标路径（放在 public/icons/ 下）
+const NORMAL_ICON = "/icons/marker_blue.png";
+const EDIT_ICON = "/icons/marker_red.png";
+
 const startDrawing = () => {
     if (drawing.value || editMode.value) return;
     drawing.value = true;
@@ -46,8 +50,8 @@ const startDrawing = () => {
     tempPolyline.value = viewer.entities.add({
         polyline: {
             positions: new Cesium.CallbackProperty(() => [...pathPoints.value], false),
-            width: 6,
-            material: Cesium.Color.ORANGE,
+            width: 3,
+            material: Cesium.Color.BLUE.withAlpha(0.6),
             clampToGround: false,
         },
     });
@@ -56,19 +60,33 @@ const startDrawing = () => {
     handler.value.setInputAction((click) => {
         const cartesian = viewer.scene.pickPosition(click.position);
         if (cartesian) {
-            // 设置高度为100米
             const carto = Cesium.Cartographic.fromCartesian(cartesian);
             const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
             pathPoints.value.push(newCartesian);
-            
+
+            // 创建航点：同时包含 point 和 billboard
             const pointEntity = viewer.entities.add({
                 position: newCartesian,
+                // 默认显示圆形点
                 point: {
                     pixelSize: 10,
                     color: Cesium.Color.ORANGE,
                     outlineColor: Cesium.Color.WHITE,
                     outlineWidth: 2,
                     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    show: false, // 编辑时再显示
+                },
+                // 编辑时显示的图标（默认隐藏）
+                billboard: {
+                    image: NORMAL_ICON,
+                    scale: 0.5,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+                    pixelOffset: new Cesium.Cartesian2(0, -10),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    scaleByDistance: new Cesium.NearFarScalar(1000, 0.4, 10000, 0.2), // 距离越远越小
+                    translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
+                    show: true, // 编辑时再显示
                 },
             });
             pathPointEntities.value.push(pointEntity);
@@ -96,7 +114,7 @@ const finishDrawing = (positions) => {
         viewer.entities.remove(tempPolyline.value);
         tempPolyline.value = null;
     }
-    
+
     // 最终航线
     finalPolyline.value = viewer.entities.add({
         name: "无人机航线",
@@ -110,7 +128,6 @@ const finishDrawing = (positions) => {
 
     // 添加无人机模型
     if (positions.length > 1) {
-        // 起点
         const start = positions[0];
         droneEntity.value = viewer.entities.add({
             name: "无人机",
@@ -124,10 +141,10 @@ const finishDrawing = (positions) => {
                 text: new Cesium.CallbackProperty(() => {
                     const position = droneEntity.value?.position?.getValue(props.viewer.clock.currentTime);
                     if (!position) return "无人机信息\n准备起飞";
-                    
+
                     const cartographic = Cesium.Cartographic.fromCartesian(position);
                     const height = cartographic?.height?.toFixed(1) || '0.0';
-                    
+
                     return `无人机信息\n高度: ${height}m\n速度: 0 m/s\n电量: 100%`;
                 }, false),
                 font: new Cesium.CallbackProperty(() => {
@@ -159,9 +176,9 @@ const finishDrawing = (positions) => {
 
 const toggleEditMode = () => {
     if (pathPoints.value.length === 0) return;
-    
+
     editMode.value = !editMode.value;
-    
+
     if (editMode.value) {
         startEditMode();
     } else {
@@ -172,14 +189,14 @@ const toggleEditMode = () => {
 const startEditMode = () => {
     const { viewer } = props;
     editHandler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    
-    // 使路径点在编辑模式下更突出
-    pathPointEntities.value.forEach((entity, index) => {
-        if (entity.point) {
-            entity.point.pixelSize = 15;
-            entity.point.color = Cesium.Color.YELLOW;
-            entity.point.outlineColor = Cesium.Color.RED;
-            entity.point.outlineWidth = 3;
+
+    // 切换为自定义图标
+    pathPointEntities.value.forEach((entity) => {
+        if (entity.point) entity.point.show = false;
+        if (entity.billboard) {
+            entity.billboard.show = true;
+            entity.billboard.image = EDIT_ICON;
+            entity.billboard.scale = 0.6; // 编辑时稍大
         }
     });
 
@@ -192,6 +209,14 @@ const startEditMode = () => {
             if (entityIndex !== -1) {
                 isDragging.value = true;
                 draggedPointIndex.value = entityIndex;
+
+                // 👇 高亮选中的点
+                const billboard = entity.billboard;
+                if (billboard) {
+                    // 方式一：放大 + 变色（推荐）
+                    billboard.scale = 0.8; // 放大
+                }
+
                 viewer.scene.screenSpaceCameraController.enableRotate = false;
                 viewer.scene.screenSpaceCameraController.enableZoom = false;
                 viewer.scene.screenSpaceCameraController.enableTranslate = false;
@@ -204,15 +229,12 @@ const startEditMode = () => {
         if (isDragging.value && draggedPointIndex.value !== -1) {
             const cartesian = viewer.scene.pickPosition(movement.endPosition);
             if (cartesian) {
-                // 保持高度为100米
                 const carto = Cesium.Cartographic.fromCartesian(cartesian);
                 const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
-                
-                // 更新路径点位置
+
                 pathPoints.value[draggedPointIndex.value] = newCartesian;
                 pathPointEntities.value[draggedPointIndex.value].position = newCartesian;
-                
-                // 如果是第一个点，也更新无人机位置
+
                 if (draggedPointIndex.value === 0 && droneEntity.value) {
                     droneEntity.value.position = newCartesian;
                 }
@@ -238,12 +260,10 @@ const startEditMode = () => {
             const entity = pickedObject.id;
             const entityIndex = pathPointEntities.value.indexOf(entity);
             if (entityIndex !== -1 && pathPoints.value.length > 2) {
-                // 删除路径点
                 pathPoints.value.splice(entityIndex, 1);
                 props.viewer.entities.remove(pathPointEntities.value[entityIndex]);
                 pathPointEntities.value.splice(entityIndex, 1);
-                
-                // 如果删除的是第一个点，更新无人机位置
+
                 if (entityIndex === 0 && droneEntity.value && pathPoints.value.length > 0) {
                     droneEntity.value.position = pathPoints.value[0];
                 }
@@ -253,60 +273,82 @@ const startEditMode = () => {
 };
 
 const exitEditMode = () => {
-    // 恢复路径点原来的样式
+    // 恢复为圆形点
     pathPointEntities.value.forEach((entity) => {
-        if (entity.point) {
-            entity.point.pixelSize = 10;
-            entity.point.color = Cesium.Color.ORANGE;
-            entity.point.outlineColor = Cesium.Color.WHITE;
-            entity.point.outlineWidth = 2;
+        if (entity.billboard) {
+
+            entity.billboard.image = NORMAL_ICON;
+            entity.billboard.scale = 0.5;
         }
+
+        // if (entity.point) {
+        //     entity.point.show = true;
+        //     entity.point.pixelSize = 10;
+        //     entity.point.color = Cesium.Color.ORANGE;
+        //     entity.point.outlineColor = Cesium.Color.WHITE;
+        //     entity.point.outlineWidth = 2;
+        // }
     });
 
-    // 销毁编辑处理器
     if (editHandler.value) {
         editHandler.value.destroy();
         editHandler.value = null;
     }
 
-    // 重置拖拽状态
     isDragging.value = false;
     draggedPointIndex.value = -1;
 
-    // 恢复相机控制
     props.viewer.scene.screenSpaceCameraController.enableRotate = true;
     props.viewer.scene.screenSpaceCameraController.enableZoom = true;
     props.viewer.scene.screenSpaceCameraController.enableTranslate = true;
 };
 
 const clearAll = () => {
-    // 退出编辑模式
     if (editMode.value) {
         editMode.value = false;
         exitEditMode();
     }
-    
-    props.viewer.entities.removeAll();
-    pathPoints.value = [];
+
+    const { viewer } = props;
+
+    // 逐个移除
+    if (tempPolyline.value) {
+        viewer.entities.remove(tempPolyline.value);
+        tempPolyline.value = null;
+    }
+
+    if (finalPolyline.value) {
+        viewer.entities.remove(finalPolyline.value);
+        finalPolyline.value = null;
+    }
+
+    if (droneEntity.value) {
+        viewer.entities.remove(droneEntity.value);
+        droneEntity.value = null;
+    }
+
+    pathPointEntities.value.forEach(entity => {
+        viewer.entities.remove(entity);
+    });
+
     pathPointEntities.value = [];
-    droneEntity.value = null;
-    finalPolyline.value = null;
-    tempPolyline.value = null;
+    pathPoints.value = [];
+
+    // 可选：停止事件处理器
+    if (handler.value) {
+        handler.value.destroy();
+        handler.value = null;
+    }
+
+    drawing.value = false;
 };
 
 onUnmounted(() => {
-    if (handler.value) {
-        handler.value.destroy();
-    }
-    if (editHandler.value) {
-        editHandler.value.destroy();
-    }
-    if (tempPolyline.value) {
-        props.viewer.entities.remove(tempPolyline.value);
-    }
+    if (handler.value) handler.value.destroy();
+    if (editHandler.value) editHandler.value.destroy();
+    if (tempPolyline.value) props.viewer.entities.remove(tempPolyline.value);
 });
 
-// 让父组件可以访问 pathPoints 和 droneEntity
 defineExpose({ pathPoints, droneEntity, editMode });
 </script>
 
