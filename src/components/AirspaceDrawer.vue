@@ -26,10 +26,21 @@
         </div>
 
         <div class="control-group">
-            <button @click="startDrawing" :disabled="drawing" class="primary-btn">
+            <button @click="startDrawing" :disabled="drawing || editing" class="primary-btn">
                 {{ getDrawingButtonText() }}
             </button>
+            <button @click="toggleEditMode" :disabled="drawing" :class="editing ? 'edit-btn-active' : 'edit-btn'">
+                {{ editing ? '退出编辑' : '编辑模式' }}
+            </button>
             <button @click="clearAll" class="danger-btn">清除所有</button>
+        </div>
+
+        <!-- 编辑模式说明 -->
+        <div v-if="editing" class="edit-info">
+            <p><small>📝 编辑模式已激活</small></p>
+            <p><small>• 点击空域进入编辑状态</small></p>
+            <p><small>• 拖拽顶点修改形状</small></p>
+            <p><small>• 点击空白区域完成编辑</small></p>
         </div>
 
         <div v-if="editingEntity" class="height-controls">
@@ -46,7 +57,10 @@
                         :disabled="airspaceType === '2d'" />
                 </label>
             </div>
-            <button @click="updateHeights" class="update-btn" :disabled="airspaceType === '2d'">更新高度</button>
+            <div class="edit-controls">
+                <button @click="updateHeights" class="update-btn" :disabled="airspaceType === '2d'">更新高度</button>
+                <button @click="deleteSelectedEntity" class="delete-btn">删除空域</button>
+            </div>
         </div>
 
         <div class="instructions">
@@ -73,9 +87,13 @@ const props = defineProps({
 
 // 状态
 const drawing = ref(false);
+const editing = ref(false);
 const handler = ref(null);
+const editHandler = ref(null);
 const tempEntity = shallowRef(null); // 临时实体（可能是线、圆等）
 const editingEntity = shallowRef(null); // 当前编辑的实体
+const editingVertices = ref([]); // 编辑顶点实体数组
+const draggedVertex = ref(null); // 当前拖拽的顶点
 const editBottomHeight = ref(10);
 const editTopHeight = ref(300);
 const selectedShape = ref('custom'); // 默认自定义绘制
@@ -99,6 +117,9 @@ const getDrawingButtonText = () => {
 
 // 获取提示文字
 const getInstructionText = () => {
+    if (editing.value) {
+        return '📝 点击空域进入编辑，拖拽顶点修改形状';
+    }
     switch (selectedShape.value) {
         case 'circle':
             return '🖱️ 点击中心点，再点击边缘确定半径';
@@ -116,12 +137,18 @@ const onShapeChange = () => {
     if (drawing.value) {
         stopDrawing();
     }
+    if (editing.value) {
+        exitEditMode();
+    }
 };
 
 // 类型改变时的处理
 const onTypeChange = () => {
     if (drawing.value) {
         stopDrawing();
+    }
+    if (editing.value) {
+        exitEditMode();
     }
     // 如果切换到平面模式，重置高度
     if (airspaceType.value === '2d') {
@@ -133,9 +160,330 @@ const onTypeChange = () => {
     }
 };
 
+// 切换编辑模式
+const toggleEditMode = () => {
+    if (editing.value) {
+        exitEditMode();
+    } else {
+        enterEditMode();
+    }
+};
+
+// 进入编辑模式
+const enterEditMode = () => {
+    if (drawing.value) return;
+
+    editing.value = true;
+    console.log('进入编辑模式');
+
+    const { viewer } = props;
+    viewer.canvas.style.cursor = 'pointer';
+
+    // 设置编辑模式的事件处理器
+    editHandler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    // 点击选择空域进行编辑
+    editHandler.value.setInputAction((click) => {
+        const picked = viewer.scene.pick(click.position);
+        if (picked && picked.id && picked.id._isAirspacePolygon) {
+            startEditingEntity(picked.id);
+        } else if (picked && picked.id && picked.id._isEditVertex) {
+            // 点击编辑顶点
+            startDraggingVertex(picked.id, click.position);
+        } else {
+            // 点击空白区域，完成当前编辑
+            if (editingEntity.value) {
+                finishEditingEntity();
+            }
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // 鼠标移动处理拖拽
+    editHandler.value.setInputAction((movement) => {
+        if (draggedVertex.value) {
+            handleVertexDrag(movement.endPosition);
+        }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    // 释放拖拽
+    editHandler.value.setInputAction(() => {
+        if (draggedVertex.value) {
+            finishVertexDrag();
+        }
+    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+};
+
+// 退出编辑模式
+const exitEditMode = () => {
+    editing.value = false;
+
+    if (editingEntity.value) {
+        finishEditingEntity();
+    }
+
+    if (editHandler.value) {
+        editHandler.value.destroy();
+        editHandler.value = null;
+    }
+
+    props.viewer.canvas.style.cursor = 'default';
+    console.log('退出编辑模式');
+};
+
+// 开始编辑某个实体
+const startEditingEntity = (entity) => {
+    if (editingEntity.value) {
+        finishEditingEntity();
+    }
+
+    editingEntity.value = entity;
+    console.log('开始编辑实体:', entity.name);
+
+    // 高亮显示选中的实体
+    highlightEntity(entity, true);
+
+    // 创建编辑顶点
+    createEditVertices(entity);
+
+    // 更新高度控制器的值
+    const airspace = airspacePolygons.value.find(a => a.entity === entity);
+    if (airspace) {
+        editBottomHeight.value = airspace.bottomHeight;
+        editTopHeight.value = airspace.topHeight;
+    }
+};
+
+// 完成编辑实体
+const finishEditingEntity = () => {
+    if (!editingEntity.value) return;
+
+    console.log('完成编辑实体:', editingEntity.value.name);
+
+    // 取消高亮
+    highlightEntity(editingEntity.value, false);
+
+    // 清除编辑顶点
+    clearEditVertices();
+
+    editingEntity.value = null;
+};
+
+// 高亮/取消高亮实体
+const highlightEntity = (entity, highlight) => {
+    if (entity.polygon) {
+        entity.polygon.outlineColor = highlight ? Cesium.Color.YELLOW : Cesium.Color.CYAN;
+        entity.polygon.outlineWidth = highlight ? 3 : 1;
+    } else if (entity.ellipse) {
+        entity.ellipse.outlineColor = highlight ? Cesium.Color.YELLOW : Cesium.Color.CYAN;
+        entity.ellipse.outlineWidth = highlight ? 3 : 1;
+    }
+};
+
+// 创建编辑顶点（改进版本）
+const createEditVertices = (entity) => {
+    const { viewer } = props;
+    const airspace = airspacePolygons.value.find(a => a.entity === entity);
+
+    if (!airspace) return;
+
+    // 清除之前的编辑顶点
+    clearEditVertices();
+
+    let positions = [];
+
+    if (airspace.shape === 'circle') {
+        // 圆形：创建中心点和半径点
+        positions = [airspace.center];
+        // 计算半径点位置（在中心点的东方向）
+        const centerCarto = Cesium.Cartographic.fromCartesian(airspace.center);
+        const radiusCarto = new Cesium.Cartographic(
+            centerCarto.longitude + (airspace.radius / (6378137.0 * Math.cos(centerCarto.latitude))),
+            centerCarto.latitude,
+            centerCarto.height
+        );
+        const radiusPoint = Cesium.Cartesian3.fromRadians(radiusCarto.longitude, radiusCarto.latitude, radiusCarto.height);
+        positions.push(radiusPoint);
+    } else {
+        // 多边形：使用存储的顶点位置
+        positions = [...airspace.positions];
+    }
+
+    positions.forEach((position, index) => {
+        const vertex = viewer.entities.add({
+            position: position,
+            point: {
+                pixelSize: 12,
+                color: Cesium.Color.YELLOW,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.5, 1.5e7, 0.5),
+            },
+            label: airspace.shape === 'circle' && index === 0 ? {
+                text: 'C',
+                font: "bold 10px sans-serif",
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 1,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                pixelOffset: new Cesium.Cartesian2(0, -20),
+                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
+            } : (airspace.shape === 'circle' && index === 1 ? {
+                text: 'R',
+                font: "bold 10px sans-serif",
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 1,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                pixelOffset: new Cesium.Cartesian2(0, -20),
+                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
+            } : undefined),
+            _isEditVertex: true,
+            _vertexIndex: index,
+            _parentEntity: entity,
+        });
+
+        editingVertices.value.push(vertex);
+    });
+
+    console.log('已创建', editingVertices.value.length, '个编辑顶点');
+};
+
+// 清除编辑顶点
+const clearEditVertices = () => {
+    const { viewer } = props;
+    editingVertices.value.forEach(vertex => {
+        try {
+            viewer.entities.remove(vertex);
+        } catch (error) {
+            console.warn('移除编辑顶点时出错:', error);
+        }
+    });
+    editingVertices.value = [];
+};
+
+// 开始拖拽顶点
+const startDraggingVertex = (vertex, clickPosition) => {
+    draggedVertex.value = vertex;
+    console.log('开始拖拽顶点:', vertex._vertexIndex);
+
+    // 改变光标样式
+    props.viewer.canvas.style.cursor = 'move';
+};
+
+// 处理顶点拖拽
+const handleVertexDrag = (screenPosition) => {
+    if (!draggedVertex.value) return;
+
+    const { viewer } = props;
+    const cartesian = getCartesianFromScreenPosition(screenPosition);
+
+    if (cartesian) {
+        // 更新顶点位置
+        draggedVertex.value.position = cartesian;
+
+        // 更新父实体的几何形状
+        updateEntityGeometry(draggedVertex.value._parentEntity, draggedVertex.value._vertexIndex, cartesian);
+    }
+};
+
+// 完成顶点拖拽
+const finishVertexDrag = () => {
+    if (!draggedVertex.value) return;
+
+    console.log('完成顶点拖拽:', draggedVertex.value._vertexIndex);
+    draggedVertex.value = null;
+    props.viewer.canvas.style.cursor = 'pointer';
+};
+
+// 从屏幕位置获取世界坐标
+const getCartesianFromScreenPosition = (screenPosition) => {
+    const { viewer } = props;
+    try {
+        let cartesian = viewer.scene.pickPosition(screenPosition);
+        if (cartesian && Cesium.defined(cartesian)) {
+            return cartesian;
+        }
+
+        const ellipsoid = viewer.scene.globe.ellipsoid;
+        cartesian = viewer.camera.pickEllipsoid(screenPosition, ellipsoid);
+        if (cartesian && Cesium.defined(cartesian)) {
+            return cartesian;
+        }
+
+        return null;
+    } catch (error) {
+        console.warn('获取屏幕坐标对应的世界坐标时出错:', error);
+        return null;
+    }
+};
+
+// 更新实体几何形状
+const updateEntityGeometry = (entity, vertexIndex, newPosition) => {
+    const airspace = airspacePolygons.value.find(a => a.entity === entity);
+    if (!airspace) return;
+
+    if (airspace.shape === 'circle') {
+        if (vertexIndex === 0) {
+            // 移动中心点
+            airspace.center = newPosition;
+            entity.position = newPosition;
+
+            // 重新计算并更新编辑顶点位置
+            const radiusVertex = editingVertices.value[1];
+            if (radiusVertex) {
+                const radiusPoint = new Cesium.Cartesian3(
+                    newPosition.x + airspace.radius,
+                    newPosition.y,
+                    newPosition.z
+                );
+                radiusVertex.position = radiusPoint;
+            }
+        } else if (vertexIndex === 1) {
+            // 调整半径
+            const newRadius = Cesium.Cartesian3.distance(airspace.center, newPosition);
+            airspace.radius = newRadius;
+            entity.ellipse.semiMajorAxis = newRadius;
+            entity.ellipse.semiMinorAxis = newRadius;
+        }
+    } else {
+        // 多边形形状：更新顶点位置
+        airspace.positions[vertexIndex] = newPosition;
+
+        if (entity.polygon) {
+            entity.polygon.hierarchy = new Cesium.PolygonHierarchy([...airspace.positions]);
+        }
+    }
+};
+
+// 删除选中的实体
+const deleteSelectedEntity = () => {
+    if (!editingEntity.value) return;
+
+    const entityToDelete = editingEntity.value;
+
+    // 从空域数组中移除
+    const index = airspacePolygons.value.findIndex(a => a.entity === entityToDelete);
+    if (index !== -1) {
+        airspacePolygons.value.splice(index, 1);
+    }
+
+    // 清除编辑状态
+    finishEditingEntity();
+
+    // 从场景中移除实体
+    try {
+        props.viewer.entities.remove(entityToDelete);
+        console.log('已删除空域:', entityToDelete.name);
+    } catch (error) {
+        console.error('删除实体时出错:', error);
+    }
+};
+
 // 开始绘制
 const startDrawing = () => {
-    if (drawing.value) return;
+    if (drawing.value || editing.value) return;
 
     console.log('开始绘制空域...', selectedShape.value, '类型:', airspaceType.value);
     drawing.value = true;
@@ -483,9 +831,6 @@ const createSquareHierarchy = (center, sideLength) => {
 
     // 逆时针顺序：SW -> SE -> NE -> NW
     return [
-        Cesium.Cartesian3.fromRadians(carto.longitude - deltaLon, carto.latitude - deltaLat), // SW
-        Cesium.Cartesian3.fromRadians(carto.longitude + deltaLon, carto.latitude - deltaLat), // SE
-        Cesium.Cartesian3.fromRadians(carto.longitude + deltaLon, carto.latitude + deltaLat), // NE
         Cesium.Cartesian3.fromRadians(carto.longitude - deltaLon, carto.latitude + deltaLat), // NW
     ];
 };
@@ -624,7 +969,7 @@ const stopDrawing = () => {
     }
 
     if (props.viewer?.canvas) {
-        props.viewer.canvas.style.cursor = 'default';
+        props.viewer.canvas.style.cursor = editing.value ? 'pointer' : 'default';
     }
 
     drawing.value = false;
@@ -668,7 +1013,7 @@ const clearAll = () => {
 
     const entitiesToRemove = [];
     viewer.entities.values.forEach(entity => {
-        if (entity._isAirspacePolygon || entity._isAirspaceMarker) {
+        if (entity._isAirspacePolygon || entity._isAirspaceMarker || entity._isEditVertex) {
             entitiesToRemove.push(entity);
         }
     });
@@ -682,8 +1027,12 @@ const clearAll = () => {
     });
 
     editingEntity.value = null;
+    editingVertices.value = [];
     airspacePolygons.value = [];
     stopDrawing();
+    if (editing.value) {
+        exitEditMode();
+    }
 
     console.log('已清除所有空域');
 };
@@ -691,6 +1040,9 @@ const clearAll = () => {
 // 组件卸载时清理
 onUnmounted(() => {
     stopDrawing();
+    if (editing.value) {
+        exitEditMode();
+    }
 });
 
 // 暴露给父组件的接口
@@ -699,6 +1051,8 @@ defineExpose({
     startDrawing,
     stopDrawing,
     clearAll,
+    toggleEditMode,
+    editing,
 });
 </script>
 
@@ -801,6 +1155,26 @@ defineExpose({
     opacity: 0.6;
 }
 
+.edit-btn {
+    background: linear-gradient(135deg, #4fd1c7 0%, #38b2ac 100%);
+    color: white;
+}
+
+.edit-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+    transform: translateY(-1px);
+}
+
+.edit-btn-active {
+    background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+    color: white;
+}
+
+.edit-btn-active:hover {
+    background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+    transform: translateY(-1px);
+}
+
 .danger-btn {
     background: linear-gradient(135deg, #fc8181 0%, #e53e3e 100%);
     color: white;
@@ -825,6 +1199,30 @@ defineExpose({
     background: #4a5568;
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.delete-btn {
+    background: linear-gradient(135deg, #fc8181 0%, #e53e3e 100%);
+    color: white;
+}
+
+.delete-btn:hover {
+    background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+    transform: translateY(-1px);
+}
+
+.edit-info {
+    padding: 10px;
+    background: rgba(72, 187, 120, 0.15);
+    border: 1px solid rgba(72, 187, 120, 0.3);
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+
+.edit-info p {
+    margin: 2px 0;
+    font-size: 12px;
+    color: #9ae6b4;
 }
 
 .height-controls {
@@ -874,6 +1272,17 @@ defineExpose({
     outline: none;
     border-color: #667eea;
     background: rgba(255, 255, 255, 0.15);
+}
+
+.edit-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.edit-controls button {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 12px;
 }
 
 .instructions {

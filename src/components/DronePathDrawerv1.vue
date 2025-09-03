@@ -67,7 +67,7 @@ const startDrawing = () => {
             // 创建航点：同时包含 point 和 billboard
             const pointEntity = viewer.entities.add({
                 position: newCartesian,
-                // 默认不显示圆形点
+                // 默认显示圆形点
                 point: {
                     pixelSize: 10,
                     color: Cesium.Color.ORANGE,
@@ -126,6 +126,48 @@ const finishDrawing = (positions) => {
         },
     });
 
+    // 添加无人机模型
+    if (positions.length > 1) {
+        const start = positions[0];
+        droneEntity.value = viewer.entities.add({
+            name: "无人机",
+            position: start,
+            model: {
+                uri: "models/drone_costum.glb",
+                minimumPixelSize: 128,
+                maximumScale: 200,
+            },
+            label: new Cesium.LabelGraphics({
+                text: new Cesium.CallbackProperty(() => {
+                    const position = droneEntity.value?.position?.getValue(props.viewer.clock.currentTime);
+                    if (!position) return "无人机信息\n准备起飞";
+
+                    const cartographic = Cesium.Cartographic.fromCartesian(position);
+                    const height = cartographic?.height?.toFixed(1) || '0.0';
+
+                    return `无人机信息\n高度: ${height}m\n速度: 0 m/s\n电量: 100%`;
+                }, false),
+                font: new Cesium.CallbackProperty(() => {
+                    const model = droneEntity.value?.model;
+                    if (model) {
+                        const pixelSize = model.pixelSize?.getValue(props.viewer.clock.currentTime) || model.minimumPixelSize || 64;
+                        const fontSize = Math.max(12, Math.min(24, Math.floor(pixelSize / 8)));
+                        return `${fontSize}px sans-serif`;
+                    }
+                    return "14px sans-serif";
+                }, false),
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                pixelOffset: new Cesium.Cartesian2(0, -50),
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+                translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
+                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1)
+            })
+        });
+    }
 
     handler.value?.destroy();
     handler.value = null;

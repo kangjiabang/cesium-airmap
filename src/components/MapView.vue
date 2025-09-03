@@ -241,7 +241,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, provide, watch, watchEffect } from "vue"
 import * as Cesium from "cesium"
-import AirspaceDrawer from "@/components/AirspaceDrawer—bak.vue"
+import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import DroneFlyController from "./DroneFlyController.vue"
 import DroneReplayController from "./DroneReplayController.vue"
