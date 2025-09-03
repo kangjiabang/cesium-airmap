@@ -42,6 +42,24 @@ const startDrawing = () => {
     if (drawing.value || editMode.value) return;
     drawing.value = true;
     const { viewer } = props;
+
+    // 👇 新增：清理上一次残留的航点实体
+    pathPointEntities.value.forEach(entity => {
+        if (entity) viewer.entities.remove(entity);
+    });
+    pathPointEntities.value = [];
+
+    // 其他清理
+    pathPoints.value = [];
+    if (tempPolyline.value) {
+        viewer.entities.remove(tempPolyline.value);
+        tempPolyline.value = null;
+    }
+    if (finalPolyline.value) {
+        viewer.entities.remove(finalPolyline.value);
+        finalPolyline.value = null;
+    }
+
     pathPoints.value = [];
     pathPointEntities.value = [];
     handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -67,15 +85,6 @@ const startDrawing = () => {
             // 创建航点：同时包含 point 和 billboard
             const pointEntity = viewer.entities.add({
                 position: newCartesian,
-                // 默认不显示圆形点
-                point: {
-                    pixelSize: 10,
-                    color: Cesium.Color.ORANGE,
-                    outlineColor: Cesium.Color.WHITE,
-                    outlineWidth: 2,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                    show: false, // 编辑时再显示
-                },
                 // 编辑时显示的图标（默认隐藏）
                 billboard: {
                     image: NORMAL_ICON,
@@ -292,6 +301,14 @@ const clearAll = () => {
         exitEditMode();
     }
 
+    if (handler.value) {
+        handler.value.destroy();
+        handler.value = null;
+    }
+    if (editHandler.value) {
+        editHandler.value.destroy();
+        editHandler.value = null;
+    }
     cleanupEntities();
     drawing.value = false;
 };
