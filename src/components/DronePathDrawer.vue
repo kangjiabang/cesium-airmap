@@ -36,7 +36,7 @@ const draggedPointIndex = ref(-1);
 
 // 自定义图标路径（放在 public/icons/ 下）
 const NORMAL_ICON = "/icons/marker_blue.png";
-const EDIT_ICON = "/icons/marker_red.png";
+const EDIT_ICON = "/icons/marker_blue.png";
 
 const startDrawing = () => {
     if (drawing.value || editMode.value) return;
@@ -82,7 +82,7 @@ const startDrawing = () => {
             const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
             pathPoints.value.push(newCartesian);
 
-            // 创建航点：同时包含 point 和 billboard
+            // 创建航点：billboard
             const pointEntity = viewer.entities.add({
                 position: newCartesian,
                 // 编辑时显示的图标（默认隐藏）
@@ -163,7 +163,7 @@ const startEditMode = () => {
         if (entity.billboard) {
             entity.billboard.show = true;
             entity.billboard.image = EDIT_ICON;
-            entity.billboard.scale = 0.6; // 编辑时稍大
+            //entity.billboard.scale = 0.5; // 编辑时稍大
         }
     });
 
@@ -210,10 +210,17 @@ const startEditMode = () => {
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     // 鼠标释放结束拖拽
+    // 鼠标释放结束拖拽
     editHandler.value.setInputAction(() => {
-        if (isDragging.value) {
+        if (isDragging.value && draggedPointIndex.value !== -1) {
+            const entity = pathPointEntities.value[draggedPointIndex.value];
+            if (entity && entity.billboard) {
+                entity.billboard.scale = 0.5; // 👈 恢复原始大小
+            }
+
             isDragging.value = false;
             draggedPointIndex.value = -1;
+
             viewer.scene.screenSpaceCameraController.enableRotate = true;
             viewer.scene.screenSpaceCameraController.enableZoom = true;
             viewer.scene.screenSpaceCameraController.enableTranslate = true;
