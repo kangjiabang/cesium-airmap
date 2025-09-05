@@ -33,7 +33,7 @@ export function calculateTerrainHeight(viewer, position) {
     // );
 
     // 生成锥形射线（垂直向下为中心）
-    const coneRays = generateConeRays(position, 6, 1); // 9条射线，45度锥形角
+    const coneRays = generateConeRays(position, 1, 0.1); // 9条射线，45度锥形角
 
     let validHeights = []; // 用于存储有效的建筑物高度
 
