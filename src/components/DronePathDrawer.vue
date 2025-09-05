@@ -12,12 +12,22 @@
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
             <span v-if="editMode" class="edit-hint">拖动图标编辑航线</span>
         </div>
+
+        <!-- 剖面图容器 -->
+        <div class="profile-chart-container">
+            <div ref="chartContainer"
+                style="width: 100%; height: 300px; border: 1px solid #444; border-radius: 6px; background: #1e1e1e;">
+            </div>
+        </div>
     </div>
 </template>
 
 <script setup>
-import { ref, shallowRef, onUnmounted } from "vue";
+import { ref, shallowRef, onUnmounted, watch, onMounted, nextTick } from "vue";
 import * as Cesium from "cesium";
+import * as echarts from "echarts"; // 引入 echarts
+
+import { calculateTerrainHeight } from '@/js/ray_height_new.js'
 
 const props = defineProps({
     viewer: {
@@ -42,9 +52,25 @@ const draggedPointIndex = ref(-1);
 const NORMAL_ICON = "/icons/marker_blue.png";
 const EDIT_ICON = "/icons/marker_blue.png";
 
+
+const LINE_HEIGHT_DEFAULT = 100;
+
+const POINT_LINE_DISTANCE = 50;
+
+// --- 新增：ECharts 图表实例 ---
+const chartContainer = ref(null);
+let chartInstance = null;
+
+
 // 创建航点（含编号 label）
-function createWaypointEntity(position, index) {
-    return props.viewer.entities.add({
+function createWaypointEntity(position, index, flightHeight = LINE_HEIGHT_DEFAULT) {
+    const { viewer } = props;
+
+    // 初始 label 文本只显示编号
+    const heightText = ""; // 初始无高度
+    const labelText = `${index + 1}${heightText ? "\n" + heightText : ""}`;
+
+    const entity = viewer.entities.add({
         position: position,
         billboard: {
             image: NORMAL_ICON,
@@ -55,33 +81,139 @@ function createWaypointEntity(position, index) {
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             scaleByDistance: new Cesium.NearFarScalar(1000, 0.4, 10000, 0.2),
             translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
+            terrainHeight: 0,
             show: true,
         },
         label: {
-            text: (index + 1).toString(),
-            font: "bold 20px Microsoft YaHei, sans-serif",
+            text: labelText,
+            font: "bold 16px Microsoft YaHei, sans-serif",
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.BLACK,
             outlineWidth: 2,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-            pixelOffset: new Cesium.Cartesian2(0, -25),
+            pixelOffset: new Cesium.Cartesian2(0, -30),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             scaleByDistance: new Cesium.NearFarScalar(1000, 0.8, 10000, 0.4),
             translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
             show: true,
         },
     });
+
+
+    const { terrainHeight, rayEntities } = calculateTerrainHeight(viewer, position);
+    entity.billboard.terrainHeight = terrainHeight;
+    entity.flightHeight = flightHeight; // 保存飞行高度
+    entity.rayEntities = rayEntities;
+
+
+    console.log(`📍 航点 ${index + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
+    return entity;
 }
 
 // 更新所有航点编号
+// --- 更新所有航点编号 ---
 function updateAllLabels() {
     pathPointEntities.value.forEach((entity, index) => {
         if (entity.label) {
             entity.label.text = (index + 1).toString();
         }
     });
+    // 更新剖面图
+    updateProfileChart();
 }
+
+// --- 初始化 ECharts 图表 ---
+const initChart = () => {
+    nextTick(() => {
+        if (chartContainer.value) {
+            chartInstance = echarts.init(chartContainer.value);
+            updateProfileChart(); // 初始空图
+        }
+    });
+};
+
+// --- 更新剖面图 ---
+const updateProfileChart = () => {
+    if (!chartInstance) return;
+
+    // 提取航点的序号和 terrainHeight
+    const data = pathPointEntities.value.map((entity, index) => {
+        const height = entity.billboard.terrainHeight;
+        return [index + 1, height]; // [点序号, 高度]
+    });
+
+    const option = {
+        title: {
+            text: '航线高度剖面',
+            left: 'center',
+            textStyle: { color: '#eee', fontSize: 16 }
+        },
+        tooltip: {
+            trigger: 'axis',
+            formatter: (params) => {
+                const p = params[0];
+                return `点序号: ${p.value[0]}<br/>高度: ${p.value[1].toFixed(2)} m`;
+            }
+        },
+        xAxis: {
+            type: 'value',
+            name: '航线点序号',
+            nameLocation: 'middle',
+            nameGap: 30,
+            min: 1,
+            max: data.length > 0 ? data.length : 1,
+            axisLine: { lineStyle: { color: '#aaa' } },
+            axisLabel: { color: '#ccc' },
+            splitLine: { show: true, lineStyle: { color: '#333', type: 'dashed' } }
+        },
+        yAxis: {
+            type: 'value',
+            name: '高度 (m)',
+            nameLocation: 'middle',
+            nameGap: 40,
+            min: 0,
+            max: data.length > 0 ? Math.max(...data.map(d => d[1])) * 1.2 : 100,
+            axisLine: { lineStyle: { color: '#aaa' } },
+            axisLabel: { color: '#ccc' },
+            splitLine: { lineStyle: { color: '#333' } }
+        },
+        series: [
+            {
+                name: '航线高度剖面',
+                type: 'line',
+                data: data,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: {
+                    width: 3,
+                    color: '#4CAF50'
+                },
+                itemStyle: {
+                    color: '#43A047'
+                },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(76, 175, 80, 0.5)' },
+                        { offset: 1, color: 'rgba(76, 175, 80, 0.1)' }
+                    ])
+                }
+            }
+        ],
+        grid: { right: 60, left: 60, bottom: 60, top: 60 },
+        backgroundColor: 'transparent'
+    };
+
+    chartInstance.setOption(option, true); // true 表示覆写
+};
+
+// --- 监听 pathPointEntities 变化，自动更新图表 ---
+// watch(pathPointEntities, () => {
+//     updateProfileChart();
+// }, { deep: true });
+
+
 const startDrawing = () => {
     if (drawing.value || editMode.value) return;
     drawing.value = true;
@@ -111,7 +243,7 @@ const startDrawing = () => {
         if (!cartesian) return;
 
         const carto = Cesium.Cartographic.fromCartesian(cartesian);
-        const lifted = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
+        const lifted = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
 
         let minDist = Number.MAX_VALUE;
         let insertIdx = -1;
@@ -123,7 +255,7 @@ const startDrawing = () => {
             for (let i = 0; i < pathPoints.value.length - 1; i++) {
                 const d = distanceToLineSegment(lifted, pathPoints.value[i], pathPoints.value[i + 1]);
                 console.log("[Distance]", d);
-                if (d < minDist && d < 100) { // 距离阈值 100 米内才允许插入
+                if (d < minDist && d < POINT_LINE_DISTANCE) { // 距离阈值 50 米内才允许插入
                     minDist = d;
                     insertIdx = i + 1;
                     insertPos = closestPointOnSegment(lifted, pathPoints.value[i], pathPoints.value[i + 1]);
@@ -191,7 +323,11 @@ const startDrawing = () => {
         if (!pickedObject || !pickedObject.id) return;
         const entity = pickedObject.id;
         const idx = pathPointEntities.value.indexOf(entity);
-        if (idx === -1 || pathPoints.value.length <= 2) {
+
+        if (idx === -1) {
+            return;
+        }
+        if (pathPoints.value.length <= 2) {
             alert("至少保留 2 个航点！");
             return;
         }
@@ -218,6 +354,7 @@ const startDrawing = () => {
 
         document.getElementById("confirm-delete").onclick = () => {
             pathPoints.value.splice(idx, 1);
+            clearRays(entity, viewer);
             viewer.entities.remove(entity);
             pathPointEntities.value.splice(idx, 1);
             updateAllLabels();
@@ -261,7 +398,7 @@ const startDrawing = () => {
             const cartesian = viewer.scene.pickPosition(movement.endPosition);
             if (cartesian) {
                 const carto = Cesium.Cartographic.fromCartesian(cartesian);
-                const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
+                const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
                 const idx = draggedPointIndex.value;
                 pathPoints.value[idx] = newCartesian;
                 pathPointEntities.value[idx].position = newCartesian;
@@ -270,7 +407,7 @@ const startDrawing = () => {
         }
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
-    handler.value.setInputAction(() => {
+    handler.value.setInputAction((click) => {
         if (isDragging.value && draggedPointIndex.value !== -1) {
             const entity = pathPointEntities.value[draggedPointIndex.value];
             if (entity && entity.billboard) entity.billboard.scale = 0.5;
@@ -279,8 +416,31 @@ const startDrawing = () => {
             viewer.scene.screenSpaceCameraController.enableRotate = true;
             viewer.scene.screenSpaceCameraController.enableZoom = true;
             viewer.scene.screenSpaceCameraController.enableTranslate = true;
+
+            const cartesian = viewer.scene.pickPosition(click.position);
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            carto.height = LINE_HEIGHT_DEFAULT;
+            const position = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
+
+            //移出原有的射线
+            clearRays(entity, viewer);
+
+            const { terrainHeight, rayEntities } = calculateTerrainHeight(viewer, position);
+            entity.billboard.terrainHeight = terrainHeight;
+            entity.rayEntities = rayEntities;
+
+            // 👇 手动更新图表（因为 terrainHeight 改了）
+            updateProfileChart();
+
+            console.log(`📍 航点 ${draggedPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+
+
+
+
+
 
     // 双击结束绘制
     handler.value.setInputAction(() => {
@@ -337,6 +497,12 @@ const toggleEditMode = () => {
         exitEditMode();
     }
 };
+function clearRays(entity, viewer) {
+    entity.rayEntities.forEach(re => {
+        viewer.entities.remove(re);
+    });
+}
+
 function distanceToLineSegment(point, segmentStart, segmentEnd) {
     // 提取经纬度（忽略高度），转为 Cartographic
     const cartoPoint = Cesium.Cartographic.fromCartesian(point);
@@ -351,6 +517,7 @@ function distanceToLineSegment(point, segmentStart, segmentEnd) {
     return distance2D(p, a, b);
 }
 
+
 function closestPointOnSegment(point, segmentStart, segmentEnd) {
     const cartoPoint = Cesium.Cartographic.fromCartesian(point);
     const cartoStart = Cesium.Cartographic.fromCartesian(segmentStart);
@@ -364,7 +531,7 @@ function closestPointOnSegment(point, segmentStart, segmentEnd) {
 
     // 返回时恢复原始高度？或统一为 100（根据你的需求）
     const cartoClosest = Cesium.Cartographic.fromCartesian(closest2D);
-    return Cesium.Cartesian3.fromRadians(cartoClosest.longitude, cartoClosest.latitude, 100); // 保持飞行高度
+    return Cesium.Cartesian3.fromRadians(cartoClosest.longitude, cartoClosest.latitude, LINE_HEIGHT_DEFAULT); // 保持飞行高度
 }
 
 function distance2D(point, segmentStart, segmentEnd) {
@@ -442,7 +609,7 @@ const startEditMode = () => {
             const cartesian = viewer.scene.pickPosition(movement.endPosition);
             if (cartesian) {
                 const carto = Cesium.Cartographic.fromCartesian(cartesian);
-                const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
+                const newCartesian = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
                 const idx = draggedPointIndex.value;
                 pathPoints.value[idx] = newCartesian;
                 pathPointEntities.value[idx].position = newCartesian;
@@ -452,7 +619,7 @@ const startEditMode = () => {
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     // 拖拽结束
-    editHandler.value.setInputAction(() => {
+    editHandler.value.setInputAction((click) => {
         if (isDragging.value && draggedPointIndex.value !== -1) {
             const entity = pathPointEntities.value[draggedPointIndex.value];
             if (entity && entity.billboard) entity.billboard.scale = 0.5;
@@ -461,6 +628,22 @@ const startEditMode = () => {
             viewer.scene.screenSpaceCameraController.enableRotate = true;
             viewer.scene.screenSpaceCameraController.enableZoom = true;
             viewer.scene.screenSpaceCameraController.enableTranslate = true;
+
+            const cartesian = viewer.scene.pickPosition(click.position);
+            const carto = Cesium.Cartographic.fromCartesian(cartesian);
+            carto.height = LINE_HEIGHT_DEFAULT;
+            const position = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
+            //移出原有的射线
+            clearRays(entity, viewer);
+            const { terrainHeight, rayEntities } = calculateTerrainHeight(viewer, position);
+            entity.billboard.terrainHeight = terrainHeight;
+            entity.rayEntities = rayEntities;
+
+            console.log(`📍 航点 ${draggedPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
+            // 👇 手动更新图表（因为 terrainHeight 改了）
+            updateProfileChart();
+
+
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
@@ -471,7 +654,11 @@ const startEditMode = () => {
         if (!pickedObject || !pickedObject.id) return;
         const entity = pickedObject.id;
         const idx = pathPointEntities.value.indexOf(entity);
-        if (idx === -1 || pathPoints.value.length <= 2) {
+
+        if (idx === -1) {
+            return;
+        }
+        if (pathPoints.value.length <= 2) {
             alert("至少保留 2 个航点！");
             return;
         }
@@ -498,6 +685,7 @@ const startEditMode = () => {
 
         document.getElementById("confirm-delete").onclick = () => {
             pathPoints.value.splice(idx, 1);
+            clearRays(entity, viewer);
             viewer.entities.remove(entity);
             pathPointEntities.value.splice(idx, 1);
             if (idx === 0 && droneEntity.value && pathPoints.value.length > 0) {
@@ -530,8 +718,8 @@ const startEditMode = () => {
         if (!cartesian || pathPoints.value.length < 1) return;
 
         const carto = Cesium.Cartographic.fromCartesian(cartesian);
-        carto.height = 100.0;
-        const lifted = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 100);
+        carto.height = LINE_HEIGHT_DEFAULT;
+        const lifted = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, LINE_HEIGHT_DEFAULT);
 
         let minDist = Number.MAX_VALUE, insertIdx = -1, insertPos = null, action = "";
 
@@ -628,10 +816,22 @@ const cleanupEntities = () => {
             ref.value = null;
         }
     });
-    pathPointEntities.value.forEach(entity => viewer.entities.remove(entity));
+    pathPointEntities.value.forEach(entity => {
+        clearRays(entity, viewer);
+        viewer.entities.remove(entity)
+    });
     pathPointEntities.value = [];
     pathPoints.value = [];
 };
+
+function cleanupEntityClickHandlers() {
+    pathPointEntities.value.forEach(entity => {
+        if (entity._clickHandler) {
+            entity._clickHandler.destroy();
+            entity._clickHandler = null;
+        }
+    });
+}
 
 const clearAll = () => {
     if (editMode.value) {
@@ -644,11 +844,26 @@ const clearAll = () => {
             h.value = null;
         }
     });
+
     cleanupEntities();
+    updateAllLabels(); // 刷新编号
     drawing.value = false;
 };
 
+// --- 组件挂载后初始化图表 ---
+onMounted(() => {
+    initChart();
+    window.addEventListener('resize', () => {
+        if (chartInstance) chartInstance.resize();
+    });
+});
+
+// --- 组件卸载前清理图表 ---
 onUnmounted(() => {
+    if (chartInstance) {
+        chartInstance.dispose();
+        chartInstance = null;
+    }
     clearAll();
 });
 
@@ -697,5 +912,17 @@ defineExpose({ pathPoints, droneEntity, editMode });
     font-size: 12px;
     color: #ffeb3b;
     font-style: italic;
+}
+
+.profile-chart-container {
+    width: 100%;
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.profile-chart-container canvas {
+    /* 防止选中 */
+    pointer-events: none;
 }
 </style>
