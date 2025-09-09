@@ -61,10 +61,10 @@ export function calculateTerrainHeight(viewer, position) {
                     ],
                     width: rayInfo.isCenterRay ? 3 : 2,
                     material: rayInfo.isCenterRay ?
-                        new Cesium.PolylineOutlineMaterialProperty({
-                            color: Cesium.Color.RED,
-                            outlineColor: Cesium.Color.BLACK,
-                            outlineWidth: 1
+                        new Cesium.PolylineDashMaterialProperty({
+                            color: Cesium.Color.WHITE.withAlpha(0.7), // 设置线的颜色为白色
+                            dashLength: 16,           // 虚线中实线段的长度，可根据需要调整
+                            // dashPattern: 255,      // 可选：自定义虚线模式，默认值255 (11111111) 表示等长的虚实线
                         }) :
                         new Cesium.PolylineGlowMaterialProperty({
                             color: Cesium.Color.BLUE.withAlpha(0.7),
