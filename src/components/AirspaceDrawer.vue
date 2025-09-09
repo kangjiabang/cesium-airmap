@@ -54,6 +54,9 @@
                 {{ editing ? '退出编辑' : '编辑模式' }}
             </button>
             <button @click="clearAll" class="danger-btn">清除所有</button>
+
+            <!-- 在 clearAll 按钮之后或其他位置添加 -->
+            <button @click="saveAirspace" class="save-btn">保存空域</button>
         </div>
 
         <!-- 编辑模式说明 -->
@@ -176,9 +179,9 @@ const onCategoryChange = () => {
     if (drawing.value) {
         stopDrawing();
     }
-    if (editing.value) {
-        exitEditMode();
-    }
+    // if (editing.value) {
+    //     exitEditMode();
+    // }
     // 根据空域类型设置默认颜色
     setDefaultColors();
 };
@@ -262,6 +265,16 @@ const enterEditMode = () => {
             finishVertexDrag();
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+    // ✅ 新增：自动选中并开始编辑第一个空域
+    // 在进入编辑模式后，立即尝试编辑第一个空域
+    const firstAirspaceEntity = airspacePolygons.value.length > 0 ? airspacePolygons.value[0].entity : null;
+    if (firstAirspaceEntity) {
+        startEditingEntity(firstAirspaceEntity);
+        console.log('已自动选中第一个空域:', firstAirspaceEntity.name);
+    } else {
+        console.log('没有可编辑的空域');
+    }
 };
 
 // 退出编辑模式
@@ -339,6 +352,59 @@ const highlightEntity = (entity, highlight) => {
     }
 };
 
+// 🔽 新增：保存空域信息到控制台
+const saveAirspace = () => {
+    if (airspacePolygons.value.length === 0) {
+        console.log('❌ 没有可保存的空域。');
+        return;
+    }
+
+    console.log('✅ 开始保存空域信息...');
+    console.log('='.repeat(50));
+
+    airspacePolygons.value.forEach((airspace, index) => {
+        console.log(`📌 空域 ${index + 1}: ${airspace.entity.name}`);
+        console.log(`   类型: ${airspace.category === 'suitable' ? '适飞区' :
+            airspace.category === 'restricted' ? '限飞区' : '禁飞区'}`);
+        console.log(`   形状: ${airspace.shape === 'custom' ? '自定义' :
+            airspace.shape === 'circle' ? '圆形' :
+                airspace.shape === 'rectangle' ? '矩形' : '正方形'}`);
+        console.log(`   3D模式: ${airspace.type === '3d' ? '是' : '否'}`);
+
+        // 输出高度信息
+        if (airspace.type === '3d') {
+            console.log(`   📏 高度: 底部 ${airspace.bottomHeight}m, 顶部 ${airspace.topHeight}m`);
+        } else {
+            console.log(`   📏 高度: 平面 (固定高度)`); // 2D 模式下的处理
+        }
+
+        // 输出多边形点坐标 (仅适用于多边形类型：custom, rectangle, square)
+        if (airspace.shape !== 'circle') {
+            console.log(`   📐 多边形顶点 (${airspace.positions.length} 个):`);
+            airspace.positions.forEach((pos, i) => {
+                const carto = Cesium.Cartographic.fromCartesian(pos);
+                const lon = Cesium.Math.toDegrees(carto.longitude).toFixed(6);
+                const lat = Cesium.Math.toDegrees(carto.latitude).toFixed(6);
+                const height = carto.height.toFixed(2);
+                console.log(`     [${i + 1}] 经度: ${lon}, 纮度: ${lat}, 高度: ${height}m`);
+            });
+        } else {
+            // 圆形：输出中心点和半径
+            const centerCarto = Cesium.Cartographic.fromCartesian(airspace.center);
+            const centerLon = Cesium.Math.toDegrees(centerCarto.longitude).toFixed(6);
+            const centerLat = Cesium.Math.toDegrees(centerCarto.latitude).toFixed(6);
+            const centerHeight = centerCarto.height.toFixed(2);
+            console.log(`   🔵 圆形中心: 经度 ${centerLon}, 纬度 ${centerLat}, 高度 ${centerHeight}m`);
+            console.log(`   🔵 半径: ${airspace.radius.toFixed(2)} 米`);
+        }
+
+        console.log('-'.repeat(40));
+    });
+
+    console.log('✅ 所有空域信息已保存到控制台。');
+    console.log('='.repeat(50));
+};
+
 // 🔁 这个函数是实现“刷新颜色”的核心
 const updateSelectedEntityColor = () => {
     if (!editingEntity.value) {
@@ -387,23 +453,43 @@ const createEditVertices = (entity) => {
 
     if (airspace.shape === 'circle') {
         // 圆形：创建中心点和半径点
-        positions = [airspace.center];
-        // 计算半径点位置（在中心点的东方向）
+        // ✅ 获取空域的底部高度
+        const bottomHeight = airspace.bottomHeight;
+
+        // ✅ 1. 创建中心点编辑顶点 (C)
+        // 将原始中心点提升到空域的底部高度
         const centerCarto = Cesium.Cartographic.fromCartesian(airspace.center);
+        const elevatedCenterCarto = new Cesium.Cartographic(
+            centerCarto.longitude,
+            centerCarto.latitude,
+            bottomHeight // ✅ 使用正确的底部高度
+        );
+        const elevatedCenter = Cesium.Cartesian3.fromRadians(
+            elevatedCenterCarto.longitude,
+            elevatedCenterCarto.latitude,
+            elevatedCenterCarto.height
+        );
+        positions.push(elevatedCenter);
+
+        // ✅ 2. 创建半径点编辑顶点 (R)
+        // 计算半径点位置（在中心点的东方向），同样提升到相同高度
         const radiusCarto = new Cesium.Cartographic(
             centerCarto.longitude + (airspace.radius / (6378137.0 * Math.cos(centerCarto.latitude))),
             centerCarto.latitude,
-            centerCarto.height
+            bottomHeight // ✅ 高度一致
         );
-        const radiusPoint = Cesium.Cartesian3.fromRadians(radiusCarto.longitude, radiusCarto.latitude, radiusCarto.height);
-        positions.push(radiusPoint);
+        const elevatedRadiusPoint = Cesium.Cartesian3.fromRadians(
+            radiusCarto.longitude,
+            radiusCarto.latitude,
+            radiusCarto.height
+        );
+        positions.push(elevatedRadiusPoint);
     } else {
         // 多边形：使用存储的顶点位置
         positions = [...airspace.positions];
     }
 
-    // ✅ 提取底部高度
-    const entityHeight = entity.polygon?.height?.getValue() || 0;
+    const entityHeight = airspace.bottomHeight;
 
 
     positions.forEach((position, index) => {
@@ -499,9 +585,8 @@ const handleVertexDrag = (screenPosition) => {
         const airspace = airspacePolygons.value.find(a => a.entity === draggedVertex.value._parentEntity);
         if (!airspace) return;
 
-        // ✅ 修改后：
-        // ✅ 获取父实体的实际高度，保持与空域对齐
-        const entityHeight = draggedVertex.value._parentEntity.polygon?.height?.getValue() || 0;
+        // ✅ 修改：直接使用存储的 bottomHeight
+        const entityHeight = airspace.bottomHeight;
 
         // ✅ 提取经纬度，设置固定高度
         const carto = Cesium.Cartographic.fromCartesian(cartesian);
@@ -1450,14 +1535,30 @@ const updateHeights = () => {
         editingEntity.value.ellipse.extrudedHeight = editTopHeight.value;
     }
 
-    // 更新存储的数据
+    // ✅ 更新空域类型
     const airspace = airspacePolygons.value.find(a => a.entity === editingEntity.value);
     if (airspace) {
         airspace.bottomHeight = editBottomHeight.value;
         airspace.topHeight = editTopHeight.value;
+        airspace.category = airspaceCategory.value; // ✅ 更新类型
+
+        console.log('高度已更新:', { bottom: editBottomHeight.value, top: editTopHeight.value });
+        // ✅ 根据新类型更新颜色（可选）
+        // 这会让用户的选择更直观
+        const colors = {
+            suitable: { fill: '#00FF00', outline: '#00CC00' },
+            restricted: { fill: '#FFA500', outline: '#CC8400' },
+            prohibited: { fill: '#FF0000', outline: '#CC0000' }
+        };
+        const selectedColors = colors[airspaceCategory.value];
+        fillColor.value = selectedColors.fill;
+        outlineColor.value = selectedColors.outline;
+
+        // ✅ 立即更新实体颜色
+        updateSelectedEntityColor();
     }
 
-    console.log('高度已更新:', { bottom: editBottomHeight.value, top: editTopHeight.value });
+    console.log('空域高度和类型已更新:', editingEntity.value.name);
 };
 
 // 清除所有
@@ -1523,6 +1624,22 @@ defineExpose({
 </script>
 
 <style scoped>
+.save-btn {
+    background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+    color: white;
+}
+
+.save-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #3182ce 0%, #2b6cb0 100%);
+    transform: translateY(-1px);
+}
+
+.save-btn:disabled {
+    background: #4a5568;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 /* 🎨 新增：颜色选择器样式 */
 .color-selector {
     margin-bottom: 16px;
