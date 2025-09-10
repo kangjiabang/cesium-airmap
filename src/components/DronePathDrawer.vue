@@ -10,7 +10,7 @@
         <button @click="clearAll">清除所有</button>
         <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
-            <span v-if="editMode" class="edit-hint">拖动图标编辑航线 | 中键编辑高度</span>
+            <span v-if="editMode" class="edit-hint">点击航点编辑高度 | 拖动调整位置 | 右键删除</span>
         </div>
 
         <!-- 剖面图容器 -->
@@ -412,6 +412,17 @@ const startDrawing = () => {
 
     // 左键点击：尝试添加航点（插入或追加）
     handler.value.setInputAction((click) => {
+
+        const pickedObject = viewer.scene.pick(click.position);
+
+        // 情况1：点击的是航点 → 弹出编辑对话框
+        if (pickedObject && pickedObject.id && pathPointEntities.value.includes(pickedObject.id)) {
+            const entity = pickedObject.id;
+            const idx = pathPointEntities.value.indexOf(entity);
+            showHeightEditDialog(entity, idx, click.position);
+            return;
+        }
+
         if (isDragging.value) return; // 防止拖拽冲突
 
         const cartesian = viewer.scene.pickPosition(click.position);
@@ -619,21 +630,6 @@ const startDrawing = () => {
             finishDrawing([...pathPoints.value]);
         }
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-
-    // 中键点击：编辑高度
-    handler.value.setInputAction((click) => {
-
-        if (isDragging.value) return;
-        const pickedObject = viewer.scene.pick(click.position);
-        if (!pickedObject || !pickedObject.id) return;
-
-        const entity = pickedObject.id;
-        const idx = pathPointEntities.value.indexOf(entity);
-
-        if (idx !== -1) {
-            showHeightEditDialog(entity, idx, click.position);
-        }
-    }, Cesium.ScreenSpaceEventType.MIDDLE_CLICK);
 };
 
 const handleFinishDrawing = () => {
@@ -835,21 +831,6 @@ const startEditMode = () => {
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
-    // 中键点击：编辑高度
-    editHandler.value.setInputAction((click) => {
-
-        if (isDragging.value) return;
-        const pickedObject = viewer.scene.pick(click.position);
-        if (!pickedObject || !pickedObject.id) return;
-
-        const entity = pickedObject.id;
-        const idx = pathPointEntities.value.indexOf(entity);
-
-        if (idx !== -1) {
-            showHeightEditDialog(entity, idx, click.position);
-        }
-    }, Cesium.ScreenSpaceEventType.MIDDLE_CLICK);
-
     // 右键删除确认
     editHandler.value.setInputAction((click) => {
         if (isDragging.value) return;
@@ -915,6 +896,17 @@ const startEditMode = () => {
 
     // 左键添加确认
     editHandler.value.setInputAction((click) => {
+
+        const pickedObject = viewer.scene.pick(click.position);
+
+        // 情况1：点击航点 → 编辑
+        if (pickedObject && pickedObject.id && pathPointEntities.value.includes(pickedObject.id)) {
+            const entity = pickedObject.id;
+            const idx = pathPointEntities.value.indexOf(entity);
+            showHeightEditDialog(entity, idx, click.position);
+            return;
+        }
+
         if (isDragging.value) return;
         const { x, y } = click.position;
         const cartesian = viewer.scene.pickPosition(click.position);
