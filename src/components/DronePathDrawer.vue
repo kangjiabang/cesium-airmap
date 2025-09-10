@@ -7,6 +7,10 @@
             结束绘制
         </button>
         <button @click="toggleEditMode" :disabled="!pathPoints.length">{{ editMode ? '退出编辑' : '编辑航线' }}</button>
+        <!-- ✅ 新增：保存航线按钮 -->
+        <button @click="savePath" :disabled="!pathPoints.length">
+            保存航线
+        </button>
         <button @click="clearAll">清除所有</button>
         <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
@@ -1028,6 +1032,46 @@ function cleanupEntityClickHandlers() {
     });
 }
 
+// ✅ 新增：保存航线信息
+const savePath = () => {
+    if (pathPointEntities.value.length === 0) {
+        alert("没有可保存的航线！");
+        return;
+    }
+
+    // 创建一个数组来存储所有航点的详细信息
+    const waypoints = pathPointEntities.value.map((entity, index) => {
+        const position = entity.position.getValue(Cesium.JulianDate.now());
+        const cartographic = Cesium.Cartographic.fromCartesian(position);
+
+        return {
+            sequence: index + 1, // 序号
+            longitude: Cesium.Math.toDegrees(cartographic.longitude), // 经度 (度)
+            latitude: Cesium.Math.toDegrees(cartographic.latitude),   // 纬度 (度)
+            flightHeight: entity.flightHeight || LINE_HEIGHT_DEFAULT, // 飞行高度 (米)
+            terrainHeight: entity.billboard.terrainHeight || 0,       // 地面高度 (米)
+            relativeHeight: (entity.flightHeight || LINE_HEIGHT_DEFAULT) - (entity.billboard.terrainHeight || 0) // 相对高度 (米)
+        };
+    });
+
+    // ✅ 输出到控制台
+    console.log("📋 保存的航线信息:", waypoints);
+
+    // ✅ 可选：提供更美观的输出
+    console.group("📋 航线信息详情");
+    waypoints.forEach(wp => {
+        console.log(`航点 ${wp.sequence}:`);
+        console.log(`  经度: ${wp.longitude.toFixed(6)}°`);
+        console.log(`  纮度: ${wp.latitude.toFixed(6)}°`);
+        console.log(`  飞行高度: ${wp.flightHeight.toFixed(2)} m`);
+        console.log(`  地面高度: ${wp.terrainHeight.toFixed(2)} m`);
+        console.log(`  相对高度: ${wp.relativeHeight.toFixed(2)} m`);
+    });
+    console.groupEnd();
+
+    // ✅ 可选：弹出成功提示
+    alert(`航线保存成功！共 ${waypoints.length} 个航点。\n详细信息已输出到控制台。`);
+};
 const clearAll = () => {
     if (editMode.value) {
         editMode.value = false;
