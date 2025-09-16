@@ -1,23 +1,22 @@
 <!-- DronePathDrawer.vue -->
 <template>
     <div class="control-group drone-group">
-        <button @click="startDrawing">{{ drawing ? '航线绘制中' : '开始绘制航线' }}</button>
-        <!-- 新增：结束绘制按钮 -->
-        <button @click="handleFinishDrawing" :disabled="!drawing">
-            结束绘制
-        </button>
-        <button @click="toggleEditMode" :disabled="!pathPoints.length">{{ editMode ? '退出编辑' : '编辑航线' }}</button>
-        <!-- ✅ 新增：保存航线按钮 -->
-        <button @click="savePath" :disabled="!pathPoints.length">
-            保存航线
-        </button>
-        <button @click="clearAll">清除所有</button>
+        <!-- 控件按钮和信息 -->
+        <div class="drone-controls">
+            <button @click="startDrawing">{{ drawing ? '航线绘制中' : '开始绘制航线' }}</button>
+            <button @click="handleFinishDrawing" :disabled="!drawing">结束绘制</button>
+            <button @click="toggleEditMode" :disabled="!pathPoints.length">{{ editMode ? '退出编辑' : '编辑航线' }}</button>
+            <button @click="savePath" :disabled="!pathPoints.length">保存航线</button>
+            <button @click="clearAll">清除所有</button>
+        </div>
+
+        <!-- 航线信息提示 -->
         <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
             <span v-if="editMode" class="edit-hint">点击航点编辑高度 | 拖动调整位置 | 右键删除</span>
         </div>
 
-        <!-- 剖面图容器 -->
+        <!-- ✅ 剖面图容器：移动到最下方，占满宽度 -->
         <div class="profile-chart-container">
             <div ref="chartContainer"
                 style="width: 100%; height: 300px; border: 1px solid #444; border-radius: 6px; background: #1e1e1e;">
@@ -56,7 +55,7 @@ const draggedPointIndex = ref(-1);
 const NORMAL_ICON = "/icons/marker_blue.png";
 const EDIT_ICON = "/icons/marker_blue.png";
 
-const LINE_HEIGHT_DEFAULT = 100;
+const LINE_HEIGHT_DEFAULT = 200;
 const POINT_LINE_DISTANCE = 50;
 
 // --- 新增：ECharts 图表实例 ---
@@ -122,6 +121,10 @@ function updateEntityLabel(entity, index) {
 
     const labelText = `序号:${index + 1}\n相对高度:${relativeHeight.toFixed(0)}m\n飞行高度:${flightHeight.toFixed(0)}m`;
     entity.label.text = labelText;
+
+    entity.label.fillColor = relativeHeight < 50
+        ? new Cesium.ConstantProperty(Cesium.Color.RED)
+        : new Cesium.ConstantProperty(Cesium.Color.WHITE);
 }
 
 // 更新所有航点编号和高度信息
@@ -295,7 +298,7 @@ const updateProfileChart = () => {
     const maxHeight = Math.max(
         ...flightData.map(d => d[1]),
         ...terrainData.map(d => d[1]),
-        100
+        250
     );
 
     const option = {
@@ -323,16 +326,16 @@ const updateProfileChart = () => {
         },
         legend: {
             data: ['地面高度', '飞行高度'],
-            top: 30,
+            top: 50,
             textStyle: { color: '#ccc' }
         },
         xAxis: {
             type: 'value',
             name: '航线点序号',
             nameLocation: 'middle',
-            nameGap: 30,
+            nameGap: 20,
             min: 1,
-            max: Math.max(flightData.length, 1),
+            max: Math.max(flightData.length, 5),
             axisLine: { lineStyle: { color: '#aaa' } },
             axisLabel: { color: '#ccc' },
             splitLine: { show: true, lineStyle: { color: '#333', type: 'dashed' } }
@@ -341,9 +344,9 @@ const updateProfileChart = () => {
             type: 'value',
             name: '高度 (m)',
             nameLocation: 'middle',
-            nameGap: 50,
+            nameGap: 20,
             min: 0,
-            max: maxHeight * 1.1,
+            max: maxHeight + 10,
             axisLine: { lineStyle: { color: '#aaa' } },
             axisLabel: { color: '#ccc' },
             splitLine: { lineStyle: { color: '#333' } }
@@ -1110,17 +1113,31 @@ defineExpose({ pathPoints, droneEntity, editMode });
 </script>
 
 <style scoped>
-.drone-group {
+.control-group.drone-group {
     display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 12px;
-    align-items: center;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 12px;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    color: white;
+    font-family: 'Microsoft YaHei', sans-serif;
+    max-width: 300px;
+    margin: 16px;
+}
+
+.drone-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     justify-content: space-evenly;
 }
 
 .drone-group button {
-    margin: 5px 0;
+    margin: 2px 0;
     padding: 8px 12px;
     background: #ff9800;
     color: white;
@@ -1145,6 +1162,8 @@ defineExpose({ pathPoints, droneEntity, editMode });
     display: flex;
     flex-direction: column;
     gap: 4px;
+    font-size: 13px;
+    text-align: center;
 }
 
 .edit-hint {
@@ -1153,15 +1172,18 @@ defineExpose({ pathPoints, droneEntity, editMode });
     font-style: italic;
 }
 
+/* ✅ 剖面图容器：位于底部，占满宽度 */
 .profile-chart-container {
     width: 100%;
     margin-top: 16px;
+    border-top: 1px dashed #555;
+    padding-top: 16px;
     display: flex;
     justify-content: center;
 }
 
 .profile-chart-container canvas {
-    /* 防止选中 */
     pointer-events: none;
+    /* 防止图表干扰鼠标事件 */
 }
 </style>

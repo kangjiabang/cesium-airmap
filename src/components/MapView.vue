@@ -27,11 +27,20 @@
 
             <!-- 雪效果 - 根据菜单控制显示 -->
             <SnowEffect v-if="viewer && showSnowEffect" :viewer="viewer" />
+
+            <!-- 👇 引入独立组件 -->
+            <!-- <LandingFieldManager :viewer="viewer" /> -->
+
+            <LandingFieldManager :viewer="viewer" ref="landingFieldManager" />
         </div>
 
         <!-- 热力图视图 - 在右上角控件区域 -->
         <div class="heatmap-wrapper">
             <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
+        </div>
+
+        <div class="toolbar">
+            <button @click="enableAddLandingField">添加起降场</button>
         </div>
     </template>
 
@@ -236,6 +245,17 @@
     content: "▶";
     transform: translateY(-50%) rotate(0deg);
 }
+
+
+.toolbar {
+    position: absolute;
+    top: 30px;
+    right: 10px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 5px;
+    border-radius: 4px;
+}
 </style>
 
 <script setup>
@@ -248,6 +268,7 @@ import DroneReplayController from "./DroneReplayController.vue"
 import RainEffect from "./RainEffect.vue"
 import SnowEffect from "./SnowEffect.vue"
 import HeatmapView from "./HeatmapView.vue"
+import LandingFieldManager from "@/components/LandingFieldManager.vue" // 👈 引入新组件
 
 // Element Plus
 import "element-plus/dist/index.css"
@@ -266,6 +287,12 @@ const heatmapViewRef = ref(null)
 
 // 默认勾选的节点（可根据需要调整）
 const defaultCheckedKeys = ref([])
+
+
+let draggingEntity = null;
+let handler = null;
+const landingFields = ref([]); // 存储所有起降场实体
+const landingFieldManager = ref(null)
 
 // 监听热力图状态变化
 watch(showHeatmap, (val) => {
@@ -585,6 +612,39 @@ onMounted(() => {
     initMap()
 })
 
+// 激活添加起降场
+const enableAddLandingField = () => {
+    if (!viewer.value) return;
+
+    if (handler) {
+        handler.destroy();
+    }
+    handler = new Cesium.ScreenSpaceEventHandler(viewer.value.scene.canvas);
+
+    handler.setInputAction((movement) => {
+        const cartesian = viewer.value.scene.pickPosition(movement.position);
+        if (!cartesian) {
+            // 如果 pickPosition 失败，尝试用 ellipsoid
+            const ray = viewer.value.camera.getPickRay(movement.position);
+            cartesian = viewer.value.scene.globe.pick(ray, viewer.value.scene);
+            if (!cartesian) return;
+        }
+
+        // 👇 调用 LandingFieldManager 的方法
+        if (landingFieldManager.value && typeof landingFieldManager.value.addLandingFieldAt === 'function') {
+            landingFieldManager.value.addLandingFieldAt(cartesian);
+        } else {
+            console.warn('LandingFieldManager 未准备好或未暴露 addLandingFieldAt 方法')
+        }
+    }, Cesium.ScreenSpaceEventType.MIDDLE_CLICK);
+
+    // 右键取消（可选）
+    handler.setInputAction(() => {
+        // 可以清空当前拖动状态（如果之前有）
+        draggingEntity = null;
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+};
+
 const initMap = async () => {
     try {
         Cesium.Ion.defaultAccessToken =
@@ -613,7 +673,7 @@ const initMap = async () => {
         // 加载3D瓦片集
         try {
             const tileset = viewer.value.scene.primitives.add(
-                await Cesium.Cesium3DTileset.fromUrl("http://192.168.4.78:8000/tileset.json", {
+                await Cesium.Cesium3DTileset.fromUrl("https://gl.hangzhoudk.com/modelfile/tileset.json", {
                     debugShowBoundingVolume: false // 生产环境建议设为false
                 })
             )
