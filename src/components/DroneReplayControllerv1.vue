@@ -56,6 +56,7 @@ const props = defineProps({
 })
 
 const droneEntity = ref(null)
+const pathPoints = ref([]) // 本地生成路径点
 
 // 回放控制状态
 const isPlaying = ref(false)
@@ -68,12 +69,56 @@ const endTime = ref(null)
 
 // 计算属性
 const canReplay = computed(() => {
-    //return Array.isArray(props.pathPoints) && props.pathPoints.length > 1 && droneEntity.value
-    return Array.isArray(props.pathPoints) && props.pathPoints.length > 1
+    //return Array.isArray(pathPoints.value) && pathPoints.value.length > 1 && droneEntity.value
+    const canFly = Array.isArray(pathPoints.value) && pathPoints.value.length > 1;
+    console.log('[canReplay] canFly:', canFly)
+    return canFly;
 })
 
-// 监听路径点变化，更新时间范围
-watch(() => props.pathPoints, (newPoints) => {
+// 监听 viewer 初始化完成（或你自定义的触发条件）
+watch(() => props.viewer, (newViewer) => {
+    if (!newViewer || pathPoints.value.length > 0) return // 避免重复生成
+
+    generatePathPoints()
+}, { immediate: true })
+
+// 生成路径点函数
+function generatePathPoints() {
+    if (!props.viewer) return
+
+    const startLon = 119.99873676955849
+    const startLat = 30.28631073587987
+    const startHeight = 50 // 起飞高度 50米
+    const pointCount = 50  // 路径点数量
+    const stepDistance = 0.0001 // 每步经纬度偏移量（约10米）
+
+    const points = []
+    for (let i = 0; i < pointCount; i++) {
+        // 模拟直线向东飞行
+        const lon = startLon + i * stepDistance
+        const lat = startLat + Math.sin(i * 0.1) * 0.00005 // 加点波动模拟真实飞行
+        const height = startHeight + Math.sin(i * 0.2) * 20  // 高度起伏
+
+        const cartesian = Cesium.Cartesian3.fromDegrees(lon, lat, height)
+        points.push(cartesian)
+    }
+
+    pathPoints.value = points
+
+    // 可选：绘制路径线
+    if (props.viewer) {
+        props.viewer.entities.add({
+            polyline: {
+                positions: points,
+                width: 5,
+                material: Cesium.Color.YELLOW.withAlpha(0.8),
+
+            }
+        })
+    }
+}
+// 原先监听 pathPoints.value，现在改为监听本地 pathPoints
+watch(pathPoints, (newPoints) => {
     if (newPoints.length > 1) {
         // 为回放创建位置属性
         const property = new Cesium.SampledPositionProperty()
@@ -95,7 +140,6 @@ watch(() => props.pathPoints, (newPoints) => {
         maxTime.value = (newPoints.length - 1) * step
 
         // 关键修复：只有在播放未进行时才设置无人机的位置属性
-        // 如果正在播放，让Cesium时钟控制位置更新
         if (droneEntity.value && !isPlaying.value) {
             droneEntity.value.position = property
             droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property)
@@ -158,7 +202,7 @@ const startPlayback = () => {
     props.viewer.clock.startTime = startTime.value
     props.viewer.clock.stopTime = endTime.value
     props.viewer.clock.currentTime = startTime.value // 确保从起点开始
-    props.viewer.clock.multiplier = parseFloat(playbackSpeed.value)
+    props.viewer.clock.multiplier = parseFloat(playbackSpeed.value) * 10
     props.viewer.clock.shouldAnimate = true
     props.viewer.clock.clockRange = Cesium.ClockRange.CLAMPED // 播放结束后停止
 
@@ -218,7 +262,7 @@ onUnmounted(() => {
 
 
 function addDroneEntity() {
-    const firstPoint = props.pathPoints[0]
+    const firstPoint = pathPoints.value[0]
     const carto = Cesium.Cartographic.fromCartesian(firstPoint)
     const initialHeight = Math.max(carto.height, 0) + 2
     const initialPosition = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, initialHeight)

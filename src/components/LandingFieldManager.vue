@@ -25,54 +25,86 @@ defineExpose({
     returnToMainScene,
     getCurrentScene: () => currentScene.value,
     // 👇 新增方法：允许外部在指定位置添加起降场
-    addLandingFieldAt(cartesian) {
-        if (!props.viewer) {
-            console.warn('addLandingFieldAt: viewer 未初始化')
-            return
-        }
 
-        // 生成唯一ID
-        const id = `field_dynamic_${Date.now()}`
-        const name = `动态起降场 ${landingFields.value.length + 1}`
-
-        // 转换坐标
-        const carto = Cesium.Cartographic.fromCartesian(cartesian)
-        const centerLon = Cesium.Math.toDegrees(carto.longitude)
-        const centerLat = Cesium.Math.toDegrees(carto.latitude)
-        const centerHeight = carto.height || 1
-
-        const newFieldData = {
-            id,
-            name,
-            center: cartesian, // 直接使用传入的 Cartesian3
-            unitLayout: {
-                rows: 3,
-                cols: 4,
-                unitWidth: 30,
-                unitHeight: 30,
-                spacing: 5
-            },
-            weatherStations: [
-                {
-                    id: 'ws1',
-                    name: '气象站 #1',
-                    dimensions: new Cesium.Cartesian3(5, 5, 8),
-                    data: {
-                        temperature: '26°C',
-                        humidity: '65%',
-                        windSpeed: '3.2 m/s',
-                        windDirection: 'NE',
-                        pressure: '1013 hPa',
-                        updateTime: new Date().toLocaleString()
-                    }
-                }
-            ]
-        }
-
-        // 创建单个起降场（复用 createLandingFields 的逻辑）
-        createSingleLandingField(newFieldData)
-    }
 })
+
+
+function addLandingFieldAt(cartesian) {
+    if (!props.viewer) {
+        console.warn('addLandingFieldAt: viewer 未初始化')
+        return
+    }
+
+    // 生成唯一ID
+    const id = `field_dynamic_${Date.now()}`
+    const name = `动态起降场 ${landingFields.value.length + 1}`
+
+    // 转换坐标
+    const carto = Cesium.Cartographic.fromCartesian(cartesian)
+    const centerLon = Cesium.Math.toDegrees(carto.longitude)
+    const centerLat = Cesium.Math.toDegrees(carto.latitude)
+    const centerHeight = carto.height || 1
+
+    const newFieldData = {
+        id,
+        name,
+        center: cartesian, // 直接使用传入的 Cartesian3
+        unitLayout: {
+            rows: 3,
+            cols: 4,
+            unitWidth: 30,
+            unitHeight: 30,
+            spacing: 5
+        },
+        weatherStations: [
+            {
+                id: 'ws1',
+                name: '气象站 #1',
+                dimensions: new Cesium.Cartesian3(5, 5, 8),
+                data: {
+                    temperature: '26°C',
+                    humidity: '65%',
+                    windSpeed: '3.2 m/s',
+                    windDirection: 'NE',
+                    pressure: '1013 hPa',
+                    updateTime: new Date().toLocaleString()
+                }
+            }
+        ]
+    }
+
+    // 创建单个起降场（复用 createLandingFields 的逻辑）
+    createSingleLandingField(newFieldData)
+}
+
+let handler = null;
+// 激活添加起降场
+const enableAddLandingField = () => {
+    if (!props.viewer) return;
+
+    if (handler) {
+        handler.destroy();
+    }
+    handler = new Cesium.ScreenSpaceEventHandler(props.viewer.scene.canvas);
+
+    handler.setInputAction((movement) => {
+        let cartesian = props.viewer.scene.pickPosition(movement.position);
+        if (!cartesian) {
+            // 如果 pickPosition 失败，尝试用 ellipsoid
+            const ray = props.viewer.camera.getPickRay(movement.position);
+            cartesian = props.viewer.scene.globe.pick(ray, props.viewer.scene);
+            if (!cartesian) return;
+        }
+
+        addLandingFieldAt(cartesian);
+
+    }, Cesium.ScreenSpaceEventType.MIDDLE_CLICK);
+
+    // 右键取消（可选）
+    handler.setInputAction(() => {
+        // 可以清空当前拖动状态（如果之前有）
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+};
 
 // 起降场数据（可外部传入，此处硬编码）
 const landingFieldsData = [
@@ -205,7 +237,7 @@ function createSingleLandingField(fieldData) {
 
             const unitLon = centerLon + deltaLon
             const unitLat = centerLat + deltaLat
-            const unitBaseHeight = centerHeight + 0.1
+            const unitBaseHeight = centerHeight + 0.15
 
             const halfWidthDeg = (unitWidth / 2) / metersPerDegreeLon
             const halfHeightDeg = (unitHeight / 2) / metersPerDegreeLat
@@ -243,7 +275,8 @@ function createSingleLandingField(fieldData) {
                     outlineColor: Cesium.Color.BLUE,
                     outlineWidth: 2,
                     heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-                    extrudedHeight: unitBaseHeight + 1.5,
+                    height: 0,
+                    extrudedHeight: 1,
                     extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
                 },
                 properties: {
@@ -256,7 +289,7 @@ function createSingleLandingField(fieldData) {
                 }
             })
 
-            const unitPosition = Cesium.Cartesian3.fromDegrees(unitLon, unitLat, unitBaseHeight + 0.1)
+            const unitPosition = Cesium.Cartesian3.fromDegrees(unitLon, unitLat, 0.7)
             const labelEntity = props.viewer.entities.add({
                 position: unitPosition,
                 label: {
@@ -270,6 +303,8 @@ function createSingleLandingField(fieldData) {
                     horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                     pixelOffset: new Cesium.Cartesian2(0, -10),
                     heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                    // 👇 加上缩放
+                    scaleByDistance: new Cesium.NearFarScalar(500, 1.0, 2000, 0.4),
                     disableDepthTestDistance: Number.POSITIVE_INFINITY
                 },
                 properties: {
@@ -286,6 +321,7 @@ function createSingleLandingField(fieldData) {
     // 底座边界
     const buffer = 10 / 111320
     const baseHeight = centerHeight + 0.05
+    //const baseHeight = 0.1
     const baseWest = west - buffer
     const baseEast = east + buffer
     const baseSouth = south - buffer
@@ -295,7 +331,7 @@ function createSingleLandingField(fieldData) {
     const weatherStationOffset = 5 / 111320
     const weatherStationLon = baseEast - weatherStationOffset
     const weatherStationLat = baseNorth - weatherStationOffset
-    const weatherStationHeight = baseHeight + 2
+    const weatherStationHeight = 1
 
     const weatherStationPosition = Cesium.Cartesian3.fromDegrees(
         weatherStationLon,
@@ -326,7 +362,8 @@ function createSingleLandingField(fieldData) {
             outlineColor: Cesium.Color.WHITE.withAlpha(0.6),
             outlineWidth: 2,
             heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-            extrudedHeight: baseHeight + 0.1,
+            height: 0,
+            extrudedHeight: 0.1,
             extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
         },
         position: fieldData.center,
@@ -370,6 +407,8 @@ function createSingleLandingField(fieldData) {
                     horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                     pixelOffset: new Cesium.Cartesian2(0, -6),
                     heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                    // 👇 新增：随距离缩放
+                    scaleByDistance: new Cesium.NearFarScalar(1000, 1.0, 5000, 0.2),
                     disableDepthTestDistance: Number.POSITIVE_INFINITY
                 },
                 properties: {
@@ -397,6 +436,8 @@ function createSingleLandingField(fieldData) {
             outlineWidth: 2,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             pixelOffset: new Cesium.Cartesian2(0, -50),
+            // 👇 加上缩放
+            scaleByDistance: new Cesium.NearFarScalar(500, 1.0, 2000, 0.4),
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
         },
         point: {
@@ -473,7 +514,7 @@ function createLandingFields() {
 
                 const unitLon = centerLon + deltaLon
                 const unitLat = centerLat + deltaLat
-                const unitBaseHeight = centerHeight + 0.1
+                const unitBaseHeight = centerHeight + 0.15
 
                 const halfWidthDeg = (unitWidth / 2) / metersPerDegreeLon
                 const halfHeightDeg = (unitHeight / 2) / metersPerDegreeLat
@@ -510,8 +551,9 @@ function createLandingFields() {
                         outline: true,
                         outlineColor: Cesium.Color.BLUE,
                         outlineWidth: 2,
+                        height: 0,
                         heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-                        extrudedHeight: unitBaseHeight + 1.5,
+                        extrudedHeight: 1.5,
                         extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
                     },
                     properties: {
@@ -538,7 +580,9 @@ function createLandingFields() {
                         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                         pixelOffset: new Cesium.Cartesian2(0, -10),
                         heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                        // 👇 新增：随距离缩放
+                        scaleByDistance: new Cesium.NearFarScalar(1000, 1.0, 5000, 0.2)
                     },
                     properties: {
                         type: 'landingUnitLabel',
@@ -593,8 +637,9 @@ function createLandingFields() {
                 outline: true,
                 outlineColor: Cesium.Color.WHITE.withAlpha(0.6),
                 outlineWidth: 2,
+                height: 0,
                 heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-                extrudedHeight: baseHeight + 0.1,
+                extrudedHeight: 0.1,
                 extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
             },
             position: fieldData.center,
@@ -638,6 +683,8 @@ function createLandingFields() {
                         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
                         pixelOffset: new Cesium.Cartesian2(0, -6),
                         heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                        // 👇 新增：随距离缩放
+                        scaleByDistance: new Cesium.NearFarScalar(1000, 1.0, 5000, 0.2),
                         disableDepthTestDistance: Number.POSITIVE_INFINITY
                     },
                     properties: {
@@ -665,6 +712,8 @@ function createLandingFields() {
                 outlineWidth: 2,
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                 pixelOffset: new Cesium.Cartesian2(0, -50),
+                // 👇 加上缩放
+                scaleByDistance: new Cesium.NearFarScalar(500, 1.0, 2000, 0.4),
                 heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
             },
             point: {
@@ -894,11 +943,19 @@ watchEffect(() => {
         console.log('✅ props.viewer 存在，调用 createLandingFields')
         createLandingFields()
         setupClickHandlers()
+
+        enableAddLandingField()
     } else {
         console.log('❌ props.viewer 为 null，跳过 createLandingFields')
     }
 })
 onUnmounted(() => {
+
+    if (handler) {
+        handler.destroy()
+        handler = null
+    }
+
     // 清理事件处理器
     if (props.viewer && props.viewer.screenSpaceEventHandler) {
         props.viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)

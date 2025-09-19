@@ -45,17 +45,77 @@ const isFlying = ref(false)
 let onTickListener = null
 let highlightedBuildingEntity = null
 
+const droneEntity = ref(null)
+
 watch(
-    [() => props.pathPoints, () => props.droneEntity],
-    ([points, drone]) => {
-        canFly.value = Array.isArray(points) && points.length > 1 && !!drone;
+    () => props.pathPoints,
+    (points) => {
+        canFly.value = Array.isArray(points) && points.length > 1;
     },
     { immediate: true }
 )
 
+// 监听 viewer 初始化
+watch(() => props.viewer, (newViewer) => {
+    if (!newViewer || !props.pathPoints) return
+    // 确保无人机存在，不存在则创建
+    if (!droneEntity.value) {
+        addDroneEntity()
+    }
+}, { immediate: true })
+
+// 添加无人机实体
+function addDroneEntity() {
+    if (props.pathPoints.length === 0) return
+
+    const firstPoint = props.pathPoints[0]
+    const carto = Cesium.Cartographic.fromCartesian(firstPoint)
+    const initialHeight = Math.max(carto.height, 0) + 2
+    const initialPosition = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, initialHeight)
+
+    droneEntity.value = props.viewer.entities.add({
+        name: "无人机",
+        position: initialPosition,
+        model: {
+            uri: "models/drone_costum.glb",
+            minimumPixelSize: 128,
+            maximumScale: 200,
+        },
+        label: new Cesium.LabelGraphics({
+            text: new Cesium.CallbackProperty(() => {
+                const position = droneEntity.value?.position?.getValue(props.viewer.clock.currentTime)
+                if (!position) return "无人机信息\n准备起飞"
+
+                const cartographic = Cesium.Cartographic.fromCartesian(position)
+                const height = cartographic?.height?.toFixed(1) || '0.0'
+
+                return `无人机信息\n高度: ${height}m\n速度: 0 m/s\n电量: 100%`
+            }, false),
+            font: new Cesium.CallbackProperty(() => {
+                const model = droneEntity.value?.model
+                if (model) {
+                    const pixelSize = model.pixelSize?.getValue(props.viewer.clock.currentTime) || model.minimumPixelSize || 64
+                    const fontSize = Math.max(12, Math.min(24, Math.floor(pixelSize / 8)))
+                    return `${fontSize}px sans-serif`
+                }
+                return "14px sans-serif"
+            }, false),
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, -50),
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            translucencyByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1),
+            scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.1)
+        })
+    })
+}
+
 const startFly = () => {
-    const { viewer, pathPoints, droneEntity } = props
-    if (!viewer || !pathPoints || pathPoints.length < 2 || !droneEntity || isFlying.value) return
+    const { viewer, pathPoints } = props
+    if (!viewer || !pathPoints || pathPoints.length < 2 || !droneEntity.value || isFlying.value) return
 
     isFlying.value = true
 
@@ -92,7 +152,7 @@ const startFly = () => {
     let lastCheckTime = 0;
 
     function onTick() {
-        if (!droneEntity.position) return;
+        if (!droneEntity.value.position) return;
 
         const currentTime = viewer.clock.currentTime;
         const currentTimeSeconds = Cesium.JulianDate.toDate(currentTime).getTime() / 1000;
@@ -101,7 +161,7 @@ const startFly = () => {
         if (currentTimeSeconds - lastCheckTime < 1) return;
         lastCheckTime = currentTimeSeconds;
 
-        const position = droneEntity.position.getValue(currentTime);
+        const position = droneEntity.value.position.getValue(currentTime);
         console.log(`无人机当前位置: ${position}`);
 
         // 更新无人机标签信息
@@ -120,33 +180,33 @@ const startFly = () => {
             }
 
             // ✅ 修复：正确的标签配置
-            if (!droneEntity.label) {
-                droneEntity.label = new Cesium.LabelGraphics();
+            if (!droneEntity.value.label) {
+                droneEntity.value.label = new Cesium.LabelGraphics();
             }
 
             // 设置标签文本
-            droneEntity.label.text = `无人机信息\n高度: ${height}m\n速度: ${speed} m/s\n电量: 100%`;
+            droneEntity.value.label.text = `无人机信息\n高度: ${height}m\n速度: ${speed} m/s\n电量: 100%`;
 
             // ✅ 修复：合理的字体大小和距离缩放
-            droneEntity.label.font = '16px sans-serif'; // 固定字体大小，通过scaleByDistance控制显示大小
+            droneEntity.value.label.font = '16px sans-serif'; // 固定字体大小，通过scaleByDistance控制显示大小
 
-            droneEntity.label.fillColor = Cesium.Color.RED;
-            droneEntity.label.outlineColor = Cesium.Color.WHITE;
-            droneEntity.label.outlineWidth = 2;
-            droneEntity.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
-            droneEntity.label.pixelOffset = new Cesium.Cartesian2(0, -50);
-            droneEntity.label.verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
-            droneEntity.label.horizontalOrigin = Cesium.HorizontalOrigin.CENTER;
+            droneEntity.value.label.fillColor = Cesium.Color.RED;
+            droneEntity.value.label.outlineColor = Cesium.Color.WHITE;
+            droneEntity.value.label.outlineWidth = 2;
+            droneEntity.value.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
+            droneEntity.value.label.pixelOffset = new Cesium.Cartesian2(0, -50);
+            droneEntity.value.label.verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
+            droneEntity.value.label.horizontalOrigin = Cesium.HorizontalOrigin.CENTER;
 
             // ✅ 修复：合理的距离缩放配置
             // 参数说明：近距(100m)时完全显示(scale=1.0)，远距(5000m)时缩小到0.3倍
-            droneEntity.label.scaleByDistance = new Cesium.NearFarScalar(100.0, 1.0, 200.0, 0.3);
+            droneEntity.value.label.scaleByDistance = new Cesium.NearFarScalar(100.0, 1.0, 200.0, 0.3);
 
             // 透明度距离控制：近距时完全不透明，远距时半透明
-            droneEntity.label.translucencyByDistance = new Cesium.NearFarScalar(100.0, 1.0, 800.0, 0.5);
+            droneEntity.value.label.translucencyByDistance = new Cesium.NearFarScalar(100.0, 1.0, 800.0, 0.5);
 
             // 可见性距离：超过一定距离完全不可见
-            droneEntity.label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 600.0);
+            droneEntity.value.label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 600.0);
 
             // 保存当前位置和时间用于下次速度计算
             lastPosition = Cesium.Cartesian3.clone(position);
@@ -158,13 +218,13 @@ const startFly = () => {
             const dist = pointInNoFlyZone(position, props.noFlyZones);
             if (dist < collisionDistance) {
                 console.warn(`已经进入禁飞区，距离：${dist.toFixed(1)}米`);
-                collision_effects(droneEntity);
+                collision_effects(droneEntity.value);
             } else if (dist < warnDistance) {
                 console.warn(`进入禁飞区预警，距离：${dist.toFixed(1)}米`);
-                warning_effects(droneEntity);
+                warning_effects(droneEntity.value);
             } else {
                 console.warn(`远离禁飞区，距离：${dist.toFixed(1)}米`);
-                droneEntity.model.color = Cesium.Color.WHITE;
+                droneEntity.value.model.color = Cesium.Color.WHITE;
             }
         }
 
@@ -242,8 +302,8 @@ const startFly = () => {
     onTickListener = onTick;
     viewer.clock.onTick.addEventListener(onTickListener);
 
-    droneEntity.position = property;
-    droneEntity.orientation = new Cesium.VelocityOrientationProperty(property);
+    droneEntity.value.position = property;
+    droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
 
     viewer.clock.startTime = startTime.clone();
     viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startTime, (smoothPathPoints.length - 1) * step, new Cesium.JulianDate());
@@ -252,11 +312,11 @@ const startFly = () => {
     viewer.clock.shouldAnimate = true;
 
     // 让相机跟随实体
-    viewer.trackedEntity = droneEntity;
+    viewer.trackedEntity = droneEntity.value;
 };
 
 const stopFly = () => {
-    const { viewer, droneEntity } = props;
+    const { viewer } = props;
 
     if (!isFlying.value) return;
 
@@ -279,11 +339,11 @@ const stopFly = () => {
     viewer.trackedEntity = null;
 
     // 将无人机位置固定在当前位置
-    if (droneEntity && droneEntity.position) {
-        const currentPosition = droneEntity.position.getValue(viewer.clock.currentTime);
+    if (droneEntity.value && droneEntity.value.position) {
+        const currentPosition = droneEntity.value.position.getValue(viewer.clock.currentTime);
         if (currentPosition) {
-            droneEntity.position = new Cesium.ConstantPositionProperty(currentPosition);
-            droneEntity.orientation = undefined;
+            droneEntity.value.position = new Cesium.ConstantPositionProperty(currentPosition);
+            droneEntity.value.orientation = undefined;
         }
     }
 

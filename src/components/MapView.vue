@@ -31,16 +31,12 @@
             <!-- 👇 引入独立组件 -->
             <!-- <LandingFieldManager :viewer="viewer" /> -->
 
-            <LandingFieldManager :viewer="viewer" ref="landingFieldManager" />
+            <LandingFieldManager v-if="viewer && showFlyAreaController" :viewer="viewer" />
         </div>
 
         <!-- 热力图视图 - 在右上角控件区域 -->
         <div class="heatmap-wrapper">
             <HeatmapView ref="heatmapViewRef" v-show="showHeatmap" />
-        </div>
-
-        <div class="toolbar">
-            <button @click="enableAddLandingField">添加起降场</button>
         </div>
     </template>
 
@@ -264,7 +260,7 @@ import * as Cesium from "cesium"
 import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import DroneFlyController from "./DroneFlyController.vue"
-import DroneReplayController from "./DroneReplayController.vue"
+import DroneReplayController from "./DroneReplayControllerv2.vue"
 import RainEffect from "./RainEffect.vue"
 import SnowEffect from "./SnowEffect.vue"
 import HeatmapView from "./HeatmapView.vue"
@@ -280,6 +276,7 @@ const showRainEffect = ref(false)
 const showSnowEffect = ref(false)
 const showFlyController = ref(false)
 const showReplayController = ref(false)
+const showFlyAreaController = ref(false)
 const isDrawingAirspace = ref(false)
 const isDrawingFlightPath = ref(false)
 
@@ -309,11 +306,17 @@ const viewer = ref(null)
 provide("cesiumViewer", viewer)
 
 const dronePathDrawer = ref(null)
-const dronePathPoints = computed(() => {
-    return dronePathDrawer.value?.pathPoints ?? []
+
+const dronePathPoints = ref([])
+
+watchEffect(() => {
+    const points = dronePathDrawer.value?.pathPoints;
+    dronePathPoints.value = Array.isArray(points) ? [...points] : [];
+    console.log('📌 pathPoints 数组更新:', dronePathPoints.value);
 })
+
 const droneEntity = computed(() => {
-    return dronePathDrawer.value?.droneEntity ?? null
+    return dronePathDrawer.value?.droneEntity?.value || null
 })
 
 // 动态获取禁飞区
@@ -369,8 +372,16 @@ const menuTreeData = ref([
         label: "🎮 无人机控制",
         disabled: true, // 父节点不可选择
         children: [
-            { id: 31, label: "飞行控制器", type: "fly" },
-            { id: 32, label: "回放控制器", type: "replay" }
+            { id: 31, label: "飞行碰撞预警", type: "fly" },
+            { id: 32, label: "飞行回放", type: "replay" }
+        ]
+    },
+    {
+        id: 4,
+        label: "起降场管理",
+        disabled: true, // 父节点不可选择
+        children: [
+            { id: 41, label: "起降场管理", type: "fly_area" },
         ]
     }
 ])
@@ -395,6 +406,8 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     // 更新控制器状态
     showFlyController.value = checkedKeys.includes(31)
     showReplayController.value = checkedKeys.includes(32)
+
+    showFlyAreaController.value = checkedKeys.includes(41)
 
     // 空域管理互斥逻辑：绘制空域和绘制航线不能同时进行
     if (isDrawingAirspace.value && isDrawingFlightPath.value) {
@@ -612,38 +625,7 @@ onMounted(() => {
     initMap()
 })
 
-// 激活添加起降场
-const enableAddLandingField = () => {
-    if (!viewer.value) return;
 
-    if (handler) {
-        handler.destroy();
-    }
-    handler = new Cesium.ScreenSpaceEventHandler(viewer.value.scene.canvas);
-
-    handler.setInputAction((movement) => {
-        const cartesian = viewer.value.scene.pickPosition(movement.position);
-        if (!cartesian) {
-            // 如果 pickPosition 失败，尝试用 ellipsoid
-            const ray = viewer.value.camera.getPickRay(movement.position);
-            cartesian = viewer.value.scene.globe.pick(ray, viewer.value.scene);
-            if (!cartesian) return;
-        }
-
-        // 👇 调用 LandingFieldManager 的方法
-        if (landingFieldManager.value && typeof landingFieldManager.value.addLandingFieldAt === 'function') {
-            landingFieldManager.value.addLandingFieldAt(cartesian);
-        } else {
-            console.warn('LandingFieldManager 未准备好或未暴露 addLandingFieldAt 方法')
-        }
-    }, Cesium.ScreenSpaceEventType.MIDDLE_CLICK);
-
-    // 右键取消（可选）
-    handler.setInputAction(() => {
-        // 可以清空当前拖动状态（如果之前有）
-        draggingEntity = null;
-    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
-};
 
 const initMap = async () => {
     try {
