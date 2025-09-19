@@ -50,6 +50,8 @@ const droneEntity = shallowRef(null);
 const pathPointEntities = ref([]);
 const isDragging = ref(false);
 const draggedPointIndex = ref(-1);
+// ✅ 存储所有分段实体
+const segmentEntities = ref([]);
 
 // 自定义图标路径
 const NORMAL_ICON = "/icons/marker_blue.png";
@@ -125,6 +127,10 @@ function updateEntityLabel(entity, index) {
     entity.label.fillColor = relativeHeight < 50
         ? new Cesium.ConstantProperty(Cesium.Color.RED)
         : new Cesium.ConstantProperty(Cesium.Color.WHITE);
+
+    // 更新分段颜色
+    updateSegmentedPolyline(); // ✅
+
 }
 
 // 更新所有航点编号和高度信息
@@ -136,6 +142,30 @@ function updateAllLabels() {
     updateProfileChart();
 }
 
+// ✅ 根据航点高度判断航线颜色
+function getLineColorByAltitude() {
+    if (pathPointEntities.value.length === 0) return Cesium.Color.BLUE.withAlpha(0.8);
+
+    let hasBelow50 = false;
+    let hasBelow100 = false;
+
+    for (const entity of pathPointEntities.value) {
+        const flightHeight = entity.flightHeight || LINE_HEIGHT_DEFAULT;
+        const terrainHeight = entity.billboard.terrainHeight || 0;
+        const relativeHeight = flightHeight - terrainHeight;
+
+        if (relativeHeight < 50) {
+            hasBelow50 = true;
+            break; // 红色优先级最高，找到即可退出
+        } else if (relativeHeight < 100) {
+            hasBelow100 = true;
+        }
+    }
+
+    if (hasBelow50) return Cesium.Color.RED.withAlpha(0.8);
+    if (hasBelow100) return Cesium.Color.YELLOW.withAlpha(0.8);
+    return Cesium.Color.BLUE.withAlpha(0.8);
+}
 // 新增：显示高度编辑对话框
 function showHeightEditDialog(entity, index, clickPosition) {
     const { x, y } = clickPosition;
@@ -243,6 +273,8 @@ function showHeightEditDialog(entity, index, clickPosition) {
 
         // 更新图表
         updateProfileChart();
+
+        updateSegmentedPolyline(); // ✅ 更新分段颜色
 
         console.log(`✏️ 航点 ${index + 1} 高度已更新：${newFlightHeight.toFixed(2)} 米 (相对地面 ${(newFlightHeight - terrainHeight).toFixed(2)} 米)`);
 
@@ -409,7 +441,7 @@ const startDrawing = () => {
         polyline: {
             positions: new Cesium.CallbackProperty(() => [...pathPoints.value], false),
             width: 3,
-            material: Cesium.Color.BLUE.withAlpha(0.6),
+            material: Cesium.Color.BLUE.withAlpha(0.8),
             clampToGround: false,
         },
     });
@@ -492,6 +524,8 @@ const startDrawing = () => {
             pathPointEntities.value.splice(index, 0, entity);
 
             updateAllLabels(); // 更新编号
+
+            updateSegmentedPolyline();
             document.body.removeChild(confirmBox);
         };
 
@@ -627,6 +661,8 @@ const startDrawing = () => {
             // 手动更新图表
             updateProfileChart();
 
+            updateSegmentedPolyline();
+
             console.log(`📍 航点 ${originalPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
@@ -654,20 +690,65 @@ const finishDrawing = (positions) => {
         tempPolyline.value = null;
     }
 
-    finalPolyline.value = viewer.entities.add({
-        name: "无人机航线",
-        polyline: {
-            positions: new Cesium.CallbackProperty(() => [...pathPoints.value], false),
-            width: 3,
-            material: Cesium.Color.BLUE.withAlpha(0.8),
-            clampToGround: false,
-        },
-    });
+    // 不再创建 finalPolyline，改为创建分段
+    updateSegmentedPolyline(); // ✅ 创建分段航线
 
     handler.value?.destroy();
     handler.value = null;
     drawing.value = false;
 };
+
+// ✅ 根据两个航点计算线段颜色
+function getSegmentColor(startEntity, endEntity) {
+    // const startHeight = (startEntity.flightHeight || LINE_HEIGHT_DEFAULT) - (startEntity.billboard.terrainHeight || 0);
+    // const endHeight = (endEntity.flightHeight || LINE_HEIGHT_DEFAULT) - (endEntity.billboard.terrainHeight || 0);
+
+    const startHeight = (startEntity.flightHeight || LINE_HEIGHT_DEFAULT);
+    const endHeight = (endEntity.flightHeight || LINE_HEIGHT_DEFAULT);
+    const minRelativeHeight = Math.min(startHeight, endHeight);
+
+    if (minRelativeHeight < 50) return Cesium.Color.RED.withAlpha(0.8);
+    if (minRelativeHeight < 100) return Cesium.Color.YELLOW.withAlpha(0.8);
+    return Cesium.Color.BLUE.withAlpha(0.8);
+}
+
+// ✅ 创建/更新分段航线
+function updateSegmentedPolyline() {
+    const { viewer } = props;
+
+    // ✅ 确保移除临时航线
+    if (tempPolyline.value) {
+        viewer.entities.remove(tempPolyline.value);
+        tempPolyline.value = null;
+    }
+    // 先移除所有旧的分段
+    segmentEntities.value.forEach(entity => viewer.entities.remove(entity));
+    segmentEntities.value = [];
+
+    // 如果航点少于2个，不创建线段
+    if (pathPointEntities.value.length < 2) return;
+
+    // 为每一段创建独立 polyline
+    for (let i = 0; i < pathPointEntities.value.length - 1; i++) {
+        const startEntity = pathPointEntities.value[i];
+        const endEntity = pathPointEntities.value[i + 1];
+
+        const segment = viewer.entities.add({
+            name: `航线段 ${i + 1}`,
+            polyline: {
+                positions: [
+                    startEntity.position.getValue(Cesium.JulianDate.now()),
+                    endEntity.position.getValue(Cesium.JulianDate.now())
+                ],
+                width: 3,
+                material: getSegmentColor(startEntity, endEntity),
+                clampToGround: false
+            }
+        });
+
+        segmentEntities.value.push(segment);
+    }
+}
 
 const toggleEditMode = () => {
     if (pathPoints.value.length === 0) return;
@@ -835,6 +916,7 @@ const startEditMode = () => {
             console.log(`📍 航点 ${originalPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
             // 手动更新图表
             updateProfileChart();
+
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
@@ -970,6 +1052,7 @@ const startEditMode = () => {
                 pathPointEntities.value.push(entity);
             }
             updateAllLabels(); // 插入后刷新编号
+            updateSegmentedPolyline();
             document.body.removeChild(confirmBox);
         };
 
@@ -1090,6 +1173,10 @@ const clearAll = () => {
     cleanupEntities();
     updateAllLabels(); // 刷新编号
     drawing.value = false;
+
+    // 清理分段实体
+    segmentEntities.value.forEach(entity => props.viewer.entities.remove(entity));
+    segmentEntities.value = [];
 };
 
 // --- 组件挂载后初始化图表 ---

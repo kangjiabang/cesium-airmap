@@ -13,7 +13,7 @@ import { ref, watch } from 'vue'
 import * as Cesium from 'cesium'
 import { generateInterpolatedPointsByCartesian3 } from '@/js/path_interpolator.js'
 import { pointInNoFlyZone } from '@/js/fly_zone.js'
-import { warning_effects, collision_effects } from '@/js/danamic_effects.js'
+import { warning_effects, warning_effects_2, collision_effects } from '@/js/danamic_effects.js'
 import * as turf from '@turf/turf'
 import { getNearstBuildingsWithinDistance } from '@/js/poligon_infos_intersect_distance.js'
 import { parseWKTCoordinates, bufferPolygon } from '@/js/parse_buildings.js'
@@ -169,6 +169,14 @@ const startFly = () => {
             const cartographic = Cesium.Cartographic.fromCartesian(position);
             const height = cartographic?.height?.toFixed(1) || '0.0';
 
+            // ✅ 添加闪烁特效：当高度 < 100 米时
+            if (height < 100) {
+                warning_effects_2(droneEntity.value, viewer);
+            } else {
+                // 高度 >= 100 米，恢复默认颜色
+                droneEntity.value.model.color = Cesium.Color.WHITE;
+            }
+
             // 计算速度（m/s）
             let speed = 0;
             if (lastPosition && lastTime) {
@@ -184,9 +192,15 @@ const startFly = () => {
                 droneEntity.value.label = new Cesium.LabelGraphics();
             }
 
-            // 设置标签文本
-            droneEntity.value.label.text = `无人机信息\n高度: ${height}m\n速度: ${speed} m/s\n电量: 100%`;
+            let baseText = `无人机信息\n高度: ${height}m\n速度: ${speed} m/s\n电量: 100%`;
+            let labelText = baseText;
 
+            const heightNum = parseFloat(height);
+            if (heightNum < 100) {
+                labelText = `⚠️ 高度低于100米！\n请保持安全飞行高度\n\n` + baseText;
+            }
+
+            droneEntity.value.label.text = labelText;
             // ✅ 修复：合理的字体大小和距离缩放
             droneEntity.value.label.font = '16px sans-serif'; // 固定字体大小，通过scaleByDistance控制显示大小
 
@@ -308,7 +322,7 @@ const startFly = () => {
     viewer.clock.startTime = startTime.clone();
     viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startTime, (smoothPathPoints.length - 1) * step, new Cesium.JulianDate());
     viewer.clock.currentTime = startTime.clone();
-    viewer.clock.multiplier = 1;
+    viewer.clock.multiplier = 5;
     viewer.clock.shouldAnimate = true;
 
     // 让相机跟随实体

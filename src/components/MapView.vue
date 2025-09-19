@@ -18,6 +18,7 @@
             <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
                 :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
 
+
             <!-- 回放控制器 - 根据菜单控制显示 -->
             <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer" :pathPoints="dronePathPoints"
                 :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
@@ -373,7 +374,8 @@ const menuTreeData = ref([
         disabled: true, // 父节点不可选择
         children: [
             { id: 31, label: "飞行碰撞预警", type: "fly" },
-            { id: 32, label: "飞行回放", type: "replay" }
+            { id: 32, label: "飞行回放", type: "replay" },
+            { id: 33, label: "航线分析", type: "fly" },
         ]
     },
     {
