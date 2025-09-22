@@ -249,15 +249,32 @@ const startFly = () => {
         // 禁飞区检测
         if (position && props.noFlyZones && props.noFlyZones.length > 0) {
             const dist = pointInNoFlyZone(position, props.noFlyZones);
+
+            let zoneWarning = "";
             if (dist < collisionDistance) {
                 console.warn(`已经进入禁飞区，距离：${dist.toFixed(1)}米`);
                 collision_effects(droneEntity.value);
+                zoneWarning = `🚫 已进入禁飞区！\n距离边界: ${dist.toFixed(1)}米\n\n`;
             } else if (dist < warnDistance) {
                 console.warn(`进入禁飞区预警，距离：${dist.toFixed(1)}米`);
                 warning_effects(droneEntity.value);
+                zoneWarning = `⚠️ 靠近禁飞区！\n距离边界: ${dist.toFixed(1)}米\n\n`;
             } else {
                 console.warn(`远离禁飞区，距离：${dist.toFixed(1)}米`);
                 droneEntity.value.model.color = Cesium.Color.WHITE;
+            }
+
+            // 🔥 更新无人机标签：拼接禁飞区警告
+            if (droneEntity.value.label) {
+                let baseText = droneEntity.value.label.text?.getValue
+                    ? droneEntity.value.label.text.getValue(props.viewer.clock.currentTime)
+                    : droneEntity.value.label.text;
+
+                // 移除旧的禁飞区提示，避免累积（按换行符清理）
+                baseText = baseText.replace(/(🚫 已进入禁飞区！[\s\S]*?\n\n)|(⚠️ 靠近禁飞区！[\s\S]*?\n\n)/, "");
+
+                // 拼接禁飞区警告
+                droneEntity.value.label.text = zoneWarning + baseText;
             }
         }
 

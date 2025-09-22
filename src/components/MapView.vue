@@ -22,6 +22,8 @@
             <!-- 回放控制器 - 根据菜单控制显示 -->
             <DroneReplayController v-if="viewer && showReplayController" :viewer="viewer" :pathPoints="dronePathPoints"
                 :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+            <!-- 航线分析控制器 - 根据菜单控制显示 -->
+            <DronePathAnalyse v-if="viewer && showDronePathAnalyse" :viewer="viewer" :pathPoints="dronePathPoints" />
 
             <!-- 雨效果 - 根据菜单控制显示 -->
             <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
@@ -262,6 +264,7 @@ import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import DroneFlyController from "./DroneFlyControllerv1.vue"
 import DroneReplayController from "./DroneReplayControllerv2.vue"
+import DronePathAnalyse from "./DronePathAnalyse.vue"
 import RainEffect from "./RainEffect.vue"
 import SnowEffect from "./SnowEffect.vue"
 import HeatmapView from "./HeatmapView.vue"
@@ -278,6 +281,7 @@ const showSnowEffect = ref(false)
 const showFlyController = ref(false)
 const showReplayController = ref(false)
 const showFlyAreaController = ref(false)
+const showDronePathAnalyse = ref(false)
 const isDrawingAirspace = ref(false)
 const isDrawingFlightPath = ref(false)
 
@@ -408,8 +412,11 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     // 更新控制器状态
     showFlyController.value = checkedKeys.includes(31)
     showReplayController.value = checkedKeys.includes(32)
+    showDronePathAnalyse.value = checkedKeys.includes(33)
 
     showFlyAreaController.value = checkedKeys.includes(41)
+
+
 
     // 空域管理互斥逻辑：绘制空域和绘制航线不能同时进行
     if (isDrawingAirspace.value && isDrawingFlightPath.value) {
