@@ -14,6 +14,8 @@
 
             <DronePathDrawer v-if="viewer && isDrawingFlightPath" :viewer="viewer" ref="dronePathDrawer" />
 
+            <FenceDrawer v-if="viewer && showDrawFence" :viewer="viewer" />
+
             <!-- 飞行控制器 - 根据菜单控制显示 -->
             <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
                 :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
@@ -262,6 +264,7 @@ import { ref, onMounted, onUnmounted, computed, provide, watch, watchEffect } fr
 import * as Cesium from "cesium"
 import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
+import FenceDrawer from "./FenceDrawer.vue"
 import DroneFlyController from "./DroneFlyControllerv1.vue"
 import DroneReplayController from "./DroneReplayControllerv2.vue"
 import DronePathAnalyse from "./DronePathAnalyse.vue"
@@ -282,6 +285,7 @@ const showFlyController = ref(false)
 const showReplayController = ref(false)
 const showFlyAreaController = ref(false)
 const showDronePathAnalyse = ref(false)
+const showDrawFence = ref(false)
 const isDrawingAirspace = ref(false)
 const isDrawingFlightPath = ref(false)
 
@@ -359,7 +363,8 @@ const menuTreeData = ref([
         disabled: true, // 父节点不可选择
         children: [
             { id: 11, label: "绘制空域", type: "drawAirspace" },
-            { id: 12, label: "绘制航线", type: "drawFlightPath" }
+            { id: 12, label: "绘制航线", type: "drawFlightPath" },
+            { id: 13, label: "绘制电子围栏", type: "drawFence" }
         ]
     },
     {
@@ -377,7 +382,7 @@ const menuTreeData = ref([
         label: "🎮 无人机控制",
         disabled: true, // 父节点不可选择
         children: [
-            { id: 31, label: "飞行碰撞预警", type: "fly" },
+            { id: 31, label: "飞行模拟", type: "fly" },
             { id: 32, label: "飞行回放", type: "replay" },
             { id: 33, label: "航线分析", type: "fly" },
         ]
@@ -403,6 +408,7 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     // 更新空域管理状态
     isDrawingAirspace.value = checkedKeys.includes(11)
     isDrawingFlightPath.value = checkedKeys.includes(12)
+    showDrawFence.value = checkedKeys.includes(13)
 
     // 更新视觉效果状态
     showHeatmap.value = checkedKeys.includes(21)

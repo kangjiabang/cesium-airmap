@@ -13,7 +13,8 @@
         <!-- 航线信息提示 -->
         <div class="drone-info" :style="{ visibility: pathPoints.length ? 'visible' : 'hidden' }">
             <span>航线点数：{{ pathPoints.length || 0 }}</span>
-            <span v-if="editMode" class="edit-hint">点击航点编辑高度 | 拖动调整位置 | 右键删除</span>
+            <span>总长度：{{ totalPathLength.toFixed(2) }} km</span> <!-- ✅ 新增总长度显示 -->
+            <span class="edit-hint">点击航点编辑高度 | 拖动调整位置 | 右键删除</span>
         </div>
 
         <!-- ✅ 剖面图容器：移动到最下方，占满宽度 -->
@@ -52,6 +53,8 @@ const isDragging = ref(false);
 const draggedPointIndex = ref(-1);
 // ✅ 存储所有分段实体
 const segmentEntities = ref([]);
+// 在 ref 定义区域添加
+const totalPathLength = ref(0);
 
 // 自定义图标路径
 const NORMAL_ICON = "/icons/marker_blue.png";
@@ -63,6 +66,23 @@ const POINT_LINE_DISTANCE = 50;
 // --- 新增：ECharts 图表实例 ---
 const chartContainer = ref(null);
 let chartInstance = null;
+
+// 新增：计算总航线长度
+function calculateTotalPathLength() {
+    if (pathPointEntities.value.length < 2) {
+        totalPathLength.value = 0;
+        return;
+    }
+
+    let total = 0;
+    for (let i = 1; i < pathPointEntities.value.length; i++) {
+        const prevPosition = pathPointEntities.value[i - 1].position.getValue(Cesium.JulianDate.now());
+        const currentPosition = pathPointEntities.value[i].position.getValue(Cesium.JulianDate.now());
+        total += Cesium.Cartesian3.distance(prevPosition, currentPosition);
+    }
+
+    totalPathLength.value = total / 1000; // 转换为公里
+}
 
 // 创建航点（含编号 label）
 function createWaypointEntity(position, index, flightHeight = LINE_HEIGHT_DEFAULT) {
@@ -140,6 +160,8 @@ function updateAllLabels() {
     });
     // 更新剖面图
     updateProfileChart();
+    // ✅ 更新总长度
+    calculateTotalPathLength();
 }
 
 // ✅ 根据航点高度判断航线颜色
@@ -663,6 +685,9 @@ const startDrawing = () => {
 
             updateSegmentedPolyline();
 
+            // ✅ 更新总长度
+            calculateTotalPathLength();
+
             console.log(`📍 航点 ${originalPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
@@ -713,40 +738,67 @@ function getSegmentColor(startEntity, endEntity) {
 }
 
 // ✅ 创建/更新分段航线
+// ✅ 创建/更新分段航线 (修改版：添加距离标签)
 function updateSegmentedPolyline() {
     const { viewer } = props;
-
     // ✅ 确保移除临时航线
     if (tempPolyline.value) {
         viewer.entities.remove(tempPolyline.value);
         tempPolyline.value = null;
     }
-    // 先移除所有旧的分段
+    // 先移除所有旧的分段和距离标签
     segmentEntities.value.forEach(entity => viewer.entities.remove(entity));
     segmentEntities.value = [];
-
     // 如果航点少于2个，不创建线段
     if (pathPointEntities.value.length < 2) return;
-
-    // 为每一段创建独立 polyline
+    // 为每一段创建独立 polyline 和 距离标签
     for (let i = 0; i < pathPointEntities.value.length - 1; i++) {
         const startEntity = pathPointEntities.value[i];
         const endEntity = pathPointEntities.value[i + 1];
-
+        const startPos = startEntity.position.getValue(Cesium.JulianDate.now());
+        const endPos = endEntity.position.getValue(Cesium.JulianDate.now());
+        // 创建航线段
         const segment = viewer.entities.add({
             name: `航线段 ${i + 1}`,
             polyline: {
-                positions: [
-                    startEntity.position.getValue(Cesium.JulianDate.now()),
-                    endEntity.position.getValue(Cesium.JulianDate.now())
-                ],
+                positions: [startPos, endPos],
                 width: 3,
                 material: getSegmentColor(startEntity, endEntity),
                 clampToGround: false
             }
         });
-
         segmentEntities.value.push(segment);
+        // ✅ 计算线段中点
+        const midpoint = Cesium.Cartesian3.add(startPos, endPos, new Cesium.Cartesian3());
+        Cesium.Cartesian3.divideByScalar(midpoint, 2, midpoint);
+        // ✅ 获取中点的地形高度，用于抬升标签
+        const cartoMid = Cesium.Cartographic.fromCartesian(midpoint);
+
+        // ✅ 创建距离标签实体
+        const distanceLabel = viewer.entities.add({
+            position: Cesium.Cartesian3.fromRadians(
+                cartoMid.longitude,
+                cartoMid.latitude,
+                250 // 在地形上方50米显示，避免被遮挡
+            ),
+            label: {
+                text: `${(Cesium.Cartesian3.distance(startPos, endPos)).toFixed(2)} m`,
+                font: "bold 14px Microsoft YaHei, sans-serif",
+                fillColor: Cesium.Color.WHITE,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+                pixelOffset: new Cesium.Cartesian2(0, 10), // 在点上方一点
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                scaleByDistance: new Cesium.NearFarScalar(1000, 1.0, 8000, 0.6),
+                showBackground: true,
+                backgroundColor: new Cesium.Color(0, 0, 0, 0.5),
+                backgroundPadding: new Cesium.Cartesian2(6, 4),
+            }
+        });
+        // 将距离标签也存入 segmentEntities，方便统一管理删除
+        segmentEntities.value.push(distanceLabel);
     }
 }
 
@@ -916,6 +968,9 @@ const startEditMode = () => {
             console.log(`📍 航点 ${originalPointIndex + 1} 位置高度: ${terrainHeight.toFixed(2)} 米`);
             // 手动更新图表
             updateProfileChart();
+
+            // ✅ 更新总长度
+            calculateTotalPathLength();
 
         }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);

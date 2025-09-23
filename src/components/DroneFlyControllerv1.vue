@@ -56,6 +56,11 @@ const props = defineProps({
             console.log('[Props] noFlyZones 默认值被调用')
             return []
         }
+    },
+    // ✅ 新增：下雨状态
+    hasRain: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -171,6 +176,18 @@ const startFly = () => {
     let lastCheckTime = 0;
 
     function onTick() {
+
+        // ✅ 关键修复：在函数最开始检查飞行状态
+        if (!isFlying.value) {
+            return; // 如果飞行已停止，立即退出，避免访问可能已销毁的属性
+        }
+
+        // ✅ 检查无人机实体和位置是否存在
+        if (!droneEntity.value || !droneEntity.value.position) {
+            console.warn('无人机实体或位置属性不存在');
+            return;
+        }
+
         if (!droneEntity.value.position) return;
 
         const currentTime = viewer.clock.currentTime;
@@ -180,12 +197,60 @@ const startFly = () => {
         if (currentTimeSeconds - lastCheckTime < 1) return;
         lastCheckTime = currentTimeSeconds;
 
+        // 获取无人机在路径上的理论位置
         const position = droneEntity.value.position.getValue(currentTime);
         console.log(`无人机当前位置: ${position}`);
 
+        // ✅ 关键修复：检查 position 是否为有效值
+        if (!position) {
+            console.warn('无人机位置无效，跳过本次 tick');
+            return; // 直接退出 onTick，避免后续所有计算
+        }
+
+        // ✅ 新增：风扰动效果（仅在下雨时生效）
+        let finalPosition = position; // 最终位置，默认为理论位置
+        let finalOrientation = undefined; // 最终朝向，默认由VelocityOrientationProperty计算
+
+        if (props.hasRain) {
+            // 生成基于时间的“伪随机”扰动，使效果连续
+            const timeBasedSeed = currentTimeSeconds * 0.5; // 控制扰动变化速度
+            const windStrength = 2.0; // 风力强度，单位：米
+
+            // 计算一个平滑变化的扰动向量
+            const windOffsetX = Math.sin(timeBasedSeed) * windStrength;
+            const windOffsetY = Math.cos(timeBasedSeed * 1.3) * windStrength;
+            const windOffsetZ = Math.sin(timeBasedSeed * 0.7) * (windStrength * 0.5); // 高度方向扰动小一些
+
+            // 创建扰动向量
+            const windOffset = new Cesium.Cartesian3(windOffsetX, windOffsetY, windOffsetZ);
+
+            // 将扰动向量加到当前位置，得到最终显示位置
+            finalPosition = Cesium.Cartesian3.add(position, windOffset, new Cesium.Cartesian3());
+
+            // ✅ 计算倾斜朝向
+            // 方法：根据风的方向，计算一个“抬头”或“低头”的俯仰角 (pitch)
+            // 这里我们简化处理，让无人机朝着风来的反方向轻微倾斜
+            const pitchAngle = Cesium.Math.toRadians(-5 * Math.sin(timeBasedSeed)); // 最大倾斜5度
+            const headingAngle = Cesium.Math.toRadians(0); // 保持原航向
+            const rollAngle = Cesium.Math.toRadians(3 * Math.cos(timeBasedSeed)); // 侧滚角，最大3度
+
+            // 创建一个旋转矩阵
+            const hpr = new Cesium.HeadingPitchRoll(headingAngle, pitchAngle, rollAngle);
+            finalOrientation = Cesium.Transforms.headingPitchRollQuaternion(finalPosition, hpr);
+        }
+
+        // ✅ 应用最终的位置和朝向
+        if (finalOrientation) {
+            // 如果计算了自定义朝向，直接设置
+            droneEntity.value.orientation = finalOrientation;
+        } else {
+            // 否则，使用速度方向（这是原来的逻辑）
+            droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(droneEntity.value.position);
+        }
+
         // 更新无人机标签信息
-        if (position) {
-            const cartographic = Cesium.Cartographic.fromCartesian(position);
+        if (finalPosition) {
+            const cartographic = Cesium.Cartographic.fromCartesian(finalPosition);
             const height = cartographic?.height?.toFixed(1) || '0.0';
 
             // ✅ 添加闪烁特效：当高度 < 100 米时
@@ -199,7 +264,7 @@ const startFly = () => {
             // 计算速度（m/s）
             let speed = 0;
             if (lastPosition && lastTime) {
-                const distance = Cesium.Cartesian3.distance(position, lastPosition);
+                const distance = Cesium.Cartesian3.distance(finalPosition, lastPosition);
                 const timeDiff = Cesium.JulianDate.secondsDifference(currentTime, lastTime);
                 if (timeDiff > 0) {
                     speed = (distance / timeDiff).toFixed(1);
@@ -217,6 +282,11 @@ const startFly = () => {
             const heightNum = parseFloat(height);
             if (heightNum < 100) {
                 labelText = `⚠️ 高度低于100米！\n请保持安全飞行高度\n\n` + baseText;
+            }
+
+            // ✅ 如果下雨，在标签顶部添加提示
+            if (props.hasRain) {
+                labelText = `🌧️ 下雨中，飞行受风影响\n\n` + labelText;
             }
 
             droneEntity.value.label.text = labelText;
@@ -242,13 +312,13 @@ const startFly = () => {
             droneEntity.value.label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(0.0, 600.0);
 
             // 保存当前位置和时间用于下次速度计算
-            lastPosition = Cesium.Cartesian3.clone(position);
+            lastPosition = Cesium.Cartesian3.clone(finalPosition);
             lastTime = Cesium.JulianDate.clone(currentTime);
         }
 
         // 禁飞区检测
-        if (position && props.noFlyZones && props.noFlyZones.length > 0) {
-            const dist = pointInNoFlyZone(position, props.noFlyZones);
+        if (finalPosition && props.noFlyZones && props.noFlyZones.length > 0) {
+            const dist = pointInNoFlyZone(finalPosition, props.noFlyZones);
 
             let zoneWarning = "";
             if (dist < collisionDistance) {
@@ -272,15 +342,23 @@ const startFly = () => {
 
                 // 移除旧的禁飞区提示，避免累积（按换行符清理）
                 baseText = baseText.replace(/(🚫 已进入禁飞区！[\s\S]*?\n\n)|(⚠️ 靠近禁飞区！[\s\S]*?\n\n)/, "");
+                // 移除旧的下雨提示
+                baseText = baseText.replace(/🌧️ 下雨中，飞行受风影响\n\n/, "");
 
-                // 拼接禁飞区警告
-                droneEntity.value.label.text = zoneWarning + baseText;
+                // 拼接禁飞区警告和下雨提示
+                let newText = baseText;
+                if (props.hasRain) {
+                    newText = `🌧️ 下雨中，飞行受风影响\n\n` + newText;
+                }
+                newText = zoneWarning + newText;
+
+                droneEntity.value.label.text = newText;
             }
         }
 
         // 最近建筑物检测与高亮
-        if (position) {
-            const cartographic = Cesium.Cartographic.fromCartesian(position);
+        if (finalPosition) {
+            const cartographic = Cesium.Cartographic.fromCartesian(finalPosition);
             const lon = Cesium.Math.toDegrees(cartographic.longitude);
             const lat = Cesium.Math.toDegrees(cartographic.latitude);
             const dronePoint = turf.point([lon, lat]);
@@ -305,7 +383,8 @@ const startFly = () => {
     viewer.clock.onTick.addEventListener(onTickListener);
 
     droneEntity.value.position = property;
-    droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
+    // ✅ 注释掉这行，因为朝向将在 onTick 中动态计算
+    // droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
 
     viewer.clock.startTime = startTime.clone();
     viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startTime, (smoothPathPoints.length - 1) * step, new Cesium.JulianDate());

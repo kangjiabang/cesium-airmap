@@ -16,7 +16,7 @@ function showRayPoint(viewer, hitResult, position, endPoint) {
 
 export function calculateTerrainHeight(viewer, position) {
 
-
+    console.log("🚀 计算地面高度，位置：", position);
     // const cartesian = viewer.scene.pickPosition(position);
     // if (!cartesian) return;
 
@@ -120,8 +120,11 @@ export function calculateTerrainHeight(viewer, position) {
     } else {
         console.log("📉 未检测到有效的建筑物高度");
         // 如果没有检测到建筑物，返回地面高度或0
-        const groundHeight = 0;
-        return groundHeight;
+        //const groundHeight = 0;
+       return {
+            terrainHeight: 0,
+            rayEntities: null, // 返回射线实体数组
+        };
     }
 }
 
