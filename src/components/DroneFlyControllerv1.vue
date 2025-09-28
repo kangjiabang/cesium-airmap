@@ -1,15 +1,54 @@
 <!-- DroneFlyController.vue -->
 <template>
     <div class="drone-fly-controls">
-        <button @click="startFly" :disabled="!canFly || isFlying">开始无人机飞行</button>
-        <button @click="stopFly" :disabled="!isFlying" class="stop-button">停止无人机飞行</button>
-        <span v-if="!canFly" style="color: #888; margin-left: 8px;">请先绘制航线</span>
-        <span v-if="isFlying" style="color: #43a047; margin-left: 8px;">飞行中...</span>
+        <button @click="startFly" :disabled="!canFly || isFlying" class="action-button start-button">
+            <span class="button-icon">✈️</span>
+            <span class="button-text">开始无人机飞行</span>
+        </button>
+        <button @click="stopFly" :disabled="!isFlying" class="action-button stop-button">
+            <span class="button-icon">⏹️</span>
+            <span class="button-text">停止无人机飞行</span>
+        </button>
+
+        <!-- ✅ 美化后的速度和飞行时间设置区域 -->
+        <div class="speed-control-panel" v-if="canFly && !isFlying">
+            <div class="control-item">
+                <label class="control-label">
+                    <span class="label-icon">⚡</span>
+                    <span class="label-text">飞行速度</span>
+                </label>
+                <div class="speed-input-wrapper">
+                    <!-- 修改 template：去掉 min/max -->
+                    <input id="drone-speed" type="number" v-model="droneSpeedInput" :disabled="isFlying"
+                        class="speed-input" @blur="applySpeed" @keyup.enter="applySpeed" />
+                    <span class="speed-unit">米/秒</span>
+                </div>
+            </div>
+
+            <div class="control-item">
+                <label class="control-label">
+                    <span class="label-icon">⏱️</span>
+                    <span class="label-text">预计飞行时间</span>
+                </label>
+                <div class="duration-display">
+                    <span class="duration-value">{{ formattedDuration }}</span>
+                    <span class="duration-icon" v-if="droneSpeed < 10">🐢</span>
+                    <span class="duration-icon" v-else-if="droneSpeed >= 10 && droneSpeed < 25">🚗</span>
+                    <span class="duration-icon" v-else>🚀</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-info">
+            <span v-if="!canFly" class="status-hint">请先绘制航线</span>
+            <span v-if="isFlying" class="status-flying">✈️ 飞行中... <span class="flight-time">{{ currentFlightTime
+            }}</span></span>
+        </div>
     </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import * as Cesium from 'cesium'
 import { generateInterpolatedPointsByCartesian3 } from '@/js/path_interpolator.js'
 import { pointInNoFlyZone } from '@/js/fly_zone.js'
@@ -68,8 +107,51 @@ const canFly = ref(false)
 const isFlying = ref(false)
 let onTickListener = null
 let highlightedBuildingEntity = null
-
+const smoothPathPoints = ref([])
+// 在 ref 定义区域添加
+const droneSpeed = ref(10); // ✅ 默认速度：10 米/秒
+// 2. 新增一个用于输入框的临时值（可以是字符串/空/非法）
+const droneSpeedInput = ref('10');
 const droneEntity = ref(null)
+
+// ✅ 新增：当前飞行时间显示
+const startTime = ref(null)
+const currentFlightTime = computed(() => {
+    if (!isFlying.value || !startTime.value) return "00:00"
+
+    const elapsedSeconds = Math.floor((Date.now() - startTime.value) / 1000)
+    const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0')
+    const seconds = (elapsedSeconds % 60).toString().padStart(2, '0')
+    return `${minutes}:${seconds}`
+})
+
+// 3. 应用输入值（带验证）
+function applySpeed() {
+    let value = parseFloat(droneSpeedInput.value);
+
+    // 如果输入为空或非法，回退到当前合法值
+    if (isNaN(value) || value === '') {
+        droneSpeedInput.value = droneSpeed.value.toString();
+        return;
+    }
+
+    if (value < 1 || value > 50) {
+        alert('速度必须在 1 到 50 米/秒之间');
+    }
+
+    // 限制范围
+    if (value < 1) value = 1;
+    if (value > 50) value = 50;
+
+    // 更新合法值和输入框
+    droneSpeed.value = value;
+    droneSpeedInput.value = value.toString();
+}
+
+// 4. 监听 droneSpeed 变化，同步到输入框（比如外部修改）
+watch(droneSpeed, (newVal) => {
+    droneSpeedInput.value = newVal.toString();
+});
 
 watch(
     () => props.pathPoints,
@@ -87,6 +169,36 @@ watch(() => props.viewer, (newViewer) => {
         addDroneEntity()
     }
 }, { immediate: true })
+
+// ✅ 计算飞行总时长（秒）
+const flightDurationSeconds = computed(() => {
+    if (!props.pathPoints || props.pathPoints.length < 2) return 0;
+
+    // 临时生成插值点（用于预览，不影响实际飞行）
+    const tempSmoothPoints = generateInterpolatedPointsByCartesian3(props.pathPoints);
+
+    if (!tempSmoothPoints || tempSmoothPoints.length < 2) return 0;
+
+    let totalDist = 0;
+    for (let i = 1; i < tempSmoothPoints.length; i++) {
+        totalDist += Cesium.Cartesian3.distance(tempSmoothPoints[i - 1], tempSmoothPoints[i]);
+    }
+
+    // 时间 = 距离 / 速度
+    return totalDist / droneSpeed.value;
+});
+
+// ✅ 格式化为 "X分Y秒" 或 "X秒"
+const formattedDuration = computed(() => {
+    const sec = Math.ceil(flightDurationSeconds.value); // 向上取整更合理
+    if (sec < 60) {
+        return `${sec}秒`;
+    } else {
+        const min = Math.floor(sec / 60);
+        const remainingSec = sec % 60;
+        return `${min}分${remainingSec}秒`;
+    }
+});
 
 // 添加无人机实体
 function addDroneEntity() {
@@ -142,21 +254,31 @@ const startFly = () => {
     if (!viewer || !pathPoints || pathPoints.length < 2 || !droneEntity.value || isFlying.value) return
 
     isFlying.value = true
+    startTime.value = Date.now() // ✅ 记录开始时间
 
     // 动画飞行
     const property = new Cesium.SampledPositionProperty()
-    const startTime = Cesium.JulianDate.now()
-    const step = 5
+    const startJulianTime = Cesium.JulianDate.now()
 
     console.log(`pathPoints:${pathPoints}`)
-    const smoothPathPoints = generateInterpolatedPointsByCartesian3(pathPoints);
+    smoothPathPoints.value = generateInterpolatedPointsByCartesian3(pathPoints);
 
-    smoothPathPoints.forEach((pos, i) => {
+    // 计算总距离和平均 step
+    let totalDistance = 0;
+    for (let i = 1; i < smoothPathPoints.value.length; i++) {
+        totalDistance += Cesium.Cartesian3.distance(smoothPathPoints.value[i - 1], smoothPathPoints.value[i]);
+    }
+
+    // 如果总距离为0，使用默认 step
+    const step = totalDistance > 0 ? totalDistance / (smoothPathPoints.value.length - 1) / droneSpeed.value : 5;
+    console.log(`总距离: ${totalDistance.toFixed(2)} 米, 计算步长: ${step.toFixed(2)} 秒`);
+
+    smoothPathPoints.value.forEach((pos, i) => {
         const carto = Cesium.Cartographic.fromCartesian(pos);
         const height = Math.max(carto.height, 0) + 2;
         const newPos = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, height);
         property.addSample(
-            Cesium.JulianDate.addSeconds(startTime, i * step, new Cesium.JulianDate()),
+            Cesium.JulianDate.addSeconds(startJulianTime, i * step, new Cesium.JulianDate()),
             newPos
         );
     });
@@ -176,7 +298,6 @@ const startFly = () => {
     let lastCheckTime = 0;
 
     function onTick() {
-
         // ✅ 关键修复：在函数最开始检查飞行状态
         if (!isFlying.value) {
             return; // 如果飞行已停止，立即退出，避免访问可能已销毁的属性
@@ -197,15 +318,29 @@ const startFly = () => {
         if (currentTimeSeconds - lastCheckTime < 1) return;
         lastCheckTime = currentTimeSeconds;
 
-        // 获取无人机在路径上的理论位置
-        const position = droneEntity.value.position.getValue(currentTime);
-        console.log(`无人机当前位置: ${position}`);
-
-        // ✅ 关键修复：检查 position 是否为有效值
-        if (!position) {
-            console.warn('无人机位置无效，跳过本次 tick');
-            return; // 直接退出 onTick，避免后续所有计算
+        // ✅ 关键修复：在采样前，先检查时间是否合法
+        if (Cesium.JulianDate.greaterThan(currentTime, viewer.clock.stopTime) || !viewer.clock.shouldAnimate) {
+            console.log('飞行时间已结束，提前停止采样');
+            stopFly();
+            return;
         }
+
+        // 获取无人机在路径上的理论位置
+        let position = null;
+        try {
+            position = droneEntity.value.position.getValue(currentTime);
+        } catch (error) {
+            console.warn('采样位置时发生异常:', error.message);
+        }
+
+        // ✅ 如果连补偿位置都没有，则强制停止飞行
+        if (!position) {
+            console.error('无法获取有效无人机位置，强制停止飞行');
+            stopFly();
+            return;
+        }
+
+        console.log(`无人机当前位置: ${position}`);
 
         // ✅ 新增：风扰动效果（仅在下雨时生效）
         let finalPosition = position; // 最终位置，默认为理论位置
@@ -363,13 +498,11 @@ const startFly = () => {
             const lat = Cesium.Math.toDegrees(cartographic.latitude);
             const dronePoint = turf.point([lon, lat]);
 
-
             buildingWorker.postMessage({
                 dronePoint,
                 detectionRadius,
                 height: cartographic.height
             })
-
         }
 
         // 检查飞行是否结束
@@ -386,10 +519,10 @@ const startFly = () => {
     // ✅ 注释掉这行，因为朝向将在 onTick 中动态计算
     // droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
 
-    viewer.clock.startTime = startTime.clone();
-    viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startTime, (smoothPathPoints.length - 1) * step, new Cesium.JulianDate());
-    viewer.clock.currentTime = startTime.clone();
-    viewer.clock.multiplier = 5;
+    viewer.clock.startTime = startJulianTime.clone();
+    viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startJulianTime, (smoothPathPoints.value.length - 1) * step, new Cesium.JulianDate());
+    viewer.clock.currentTime = startJulianTime.clone();
+    viewer.clock.multiplier = 1;
     viewer.clock.shouldAnimate = true;
 
     // 让相机跟随实体
@@ -399,7 +532,6 @@ const startFly = () => {
 let lastBuildingId = null
 
 function updateHighlightedBuilding(nearest) {
-
     const currentId = nearest.polygon.properties.id
     if (currentId === lastBuildingId) {
         return // ✅ 相同建筑，不更新，避免多余开销
@@ -449,14 +581,11 @@ function updateHighlightedBuilding(nearest) {
     highlightedBuildingEntity.show = true
 }
 
-
 function clearHighlightedBuilding() {
     if (highlightedBuildingEntity) {
         highlightedBuildingEntity.show = false
     }
 }
-
-
 
 const stopFly = () => {
     const { viewer } = props;
@@ -481,12 +610,62 @@ const stopFly = () => {
     // 停止跟随
     viewer.trackedEntity = null;
 
-    // 将无人机位置固定在当前位置
-    if (droneEntity.value && droneEntity.value.position) {
-        const currentPosition = droneEntity.value.position.getValue(viewer.clock.currentTime);
-        if (currentPosition) {
-            droneEntity.value.position = new Cesium.ConstantPositionProperty(currentPosition);
-            droneEntity.value.orientation = undefined;
+    // ✅ 关键逻辑：判断是自然结束还是手动停止
+    let stopPosition = null;
+    let isNaturalEnd = false;
+
+    // 检查是否是飞行自然结束 (时钟时间 >= 停止时间)
+    if (Cesium.JulianDate.greaterThanOrEquals(viewer.clock.currentTime, viewer.clock.stopTime)) {
+        isNaturalEnd = true;
+        console.log('飞行自然结束，将停在终点');
+
+        // 自然结束：停在路径的最后一个点
+        if (smoothPathPoints.value && smoothPathPoints.value.length > 0) {
+            const lastPoint = smoothPathPoints.value[smoothPathPoints.value.length - 1];
+            const carto = Cesium.Cartographic.fromCartesian(lastPoint);
+            const stopHeight = Math.max(carto.height, 0) + 2;
+            stopPosition = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, stopHeight);
+        }
+    } else {
+        console.log('用户手动停止，将停在当前位置');
+        // 手动停止：停在当前位置
+        if (droneEntity.value && droneEntity.value.position) {
+            stopPosition = droneEntity.value.position.getValue(viewer.clock.currentTime);
+        }
+    }
+
+    // 应用最终停止位置和朝向
+    if (stopPosition) {
+        // 设置固定位置
+        droneEntity.value.position = new Cesium.ConstantPositionProperty(stopPosition);
+
+        // ✅ 设置一个固定的、有效的朝向
+        // 创建一个默认的、朝北的朝向
+        const fixedHeading = Cesium.Math.toRadians(0); // 0度，正北
+        const fixedPitch = Cesium.Math.toRadians(0);   // 0度，水平
+        const fixedRoll = Cesium.Math.toRadians(0);    // 0度，不侧倾
+        const hpr = new Cesium.HeadingPitchRoll(fixedHeading, fixedPitch, fixedRoll);
+        droneEntity.value.orientation = Cesium.Transforms.headingPitchRollQuaternion(stopPosition, hpr);
+    } else {
+        console.warn('未能获取有效的停止位置，使用默认终点显示');
+
+        //作为兜底方案
+        if (smoothPathPoints.value && smoothPathPoints.value.length > 0) {
+            const lastPoint = smoothPathPoints.value[smoothPathPoints.value.length - 1];
+            const carto = Cesium.Cartographic.fromCartesian(lastPoint);
+            const stopHeight = Math.max(carto.height, 0) + 2;
+            stopPosition = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, stopHeight);
+
+            // 设置固定位置
+            droneEntity.value.position = new Cesium.ConstantPositionProperty(stopPosition);
+
+            // ✅ 设置一个固定的、有效的朝向
+            // 创建一个默认的、朝北的朝向
+            const fixedHeading = Cesium.Math.toRadians(0); // 0度，正北
+            const fixedPitch = Cesium.Math.toRadians(0);   // 0度，水平
+            const fixedRoll = Cesium.Math.toRadians(0);    // 0度，不侧倾
+            const hpr = new Cesium.HeadingPitchRoll(fixedHeading, fixedPitch, fixedRoll);
+            droneEntity.value.orientation = Cesium.Transforms.headingPitchRollQuaternion(stopPosition, hpr);
         }
     }
 
@@ -498,31 +677,311 @@ const stopFly = () => {
 <style scoped>
 .drone-fly-controls {
     display: flex;
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
     gap: 12px;
-    margin-top: 8px;
-}
-
-.drone-fly-controls button {
-    padding: 8px 16px;
-    background: #43a047;
+    background: rgba(30, 30, 30, 0.8);
+    padding: 16px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
 }
 
-.drone-fly-controls button:disabled {
-    background: #ccc;
-    cursor: not-allowed;
+/* 美化按钮样式 */
+.action-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.start-button {
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    color: white;
+}
+
+.start-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4caf50, #388e3c);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(67, 160, 71, 0.4);
 }
 
 .stop-button {
-    background: #f44336 !important;
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    color: white;
 }
 
-.stop-button:disabled {
-    background: #ccc !important;
+.stop-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f55a4e, #e53935);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+.action-button:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.button-icon {
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+}
+
+/* 美化速度控制面板 */
+.speed-control-panel {
+    background: rgba(40, 40, 40, 0.7);
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.control-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.control-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.control-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+    min-width: 120px;
+}
+
+.label-icon {
+    font-size: 18px;
+}
+
+/* 美化滑块 */
+.speed-input-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.speed-slider {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: #333;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.speed-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #43a047;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid #2e7d32;
+    transition: all 0.2s ease;
+}
+
+.speed-slider::-webkit-slider-thumb:hover {
+    background: #4caf50;
+    transform: scale(1.1);
+}
+
+.speed-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #43a047;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid #2e7d32;
+    transition: all 0.2s ease;
+}
+
+/* 速度值显示 */
+.speed-value-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+    max-width: 80px;
+    /* ✅ 限制最大宽度 */
+    text-align: center;
+    /* ✅ 文本居中对齐 */
+    overflow: hidden;
+    /* ✅ 防止内容溢出 */
+    text-overflow: ellipsis;
+    /* ✅ 溢出时显示省略号 */
+    white-space: nowrap;
+    /* ✅ 不换行，配合 ellipsis */
+}
+
+.speed-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #43a047;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.speed-unit {
+    font-size: 12px;
+    color: #aaa;
+}
+
+/* 飞行时间显示 */
+.duration-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 100px;
+}
+
+.duration-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ff9800;
+}
+
+.duration-icon {
+    font-size: 18px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* 状态信息 */
+.status-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.status-hint {
+    color: #888;
+    font-style: italic;
+}
+
+.status-flying {
+    color: #43a047;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.flight-time {
+    background: rgba(67, 160, 71, 0.2);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .drone-fly-controls {
+        padding: 12px;
+    }
+
+    .control-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .control-label {
+        min-width: auto;
+    }
+
+    .speed-input-wrapper {
+        width: 100%;
+    }
+}
+
+/* 美化数字输入框 */
+.speed-input {
+    width: 80px;
+    padding: 8px 12px;
+    border: 2px solid #43a047;
+    border-radius: 6px;
+    background: #222;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.speed-input:focus {
+    border-color: #4caf50;
+    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.3);
+}
+
+.speed-input::-webkit-outer-spin-button,
+.speed-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.speed-input[type="number"] {
+    -moz-appearance: textfield;
+    /* Firefox 去掉上下箭头 */
+}
+
+/* 调整输入框和单位的布局 */
+.speed-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.speed-unit {
+    color: #aaa;
+    font-size: 14px;
 }
 </style>

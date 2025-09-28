@@ -18,7 +18,7 @@
 
             <!-- 飞行控制器 - 根据菜单控制显示 -->
             <DroneFlyController v-if="viewer && showFlyController" :viewer="viewer" :pathPoints="dronePathPoints"
-                :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
+                :hasRain="hasRain" :droneEntity="droneEntity" :noFlyZones="noFlyZones" />
 
 
             <!-- 回放控制器 - 根据菜单控制显示 -->
@@ -318,6 +318,8 @@ const dronePathDrawer = ref(null)
 
 const dronePathPoints = ref([])
 
+const hasRain = ref(false)
+
 watchEffect(() => {
     const points = dronePathDrawer.value?.pathPoints;
     dronePathPoints.value = Array.isArray(points) ? [...points] : [];
@@ -422,6 +424,11 @@ const handleCheck = (checkedNodes, checkedInfo) => {
 
     showFlyAreaController.value = checkedKeys.includes(41)
 
+    if (showRainEffect.value) {
+        hasRain.value = true
+    } else {
+        hasRain.value = false
+    }
 
 
     // 空域管理互斥逻辑：绘制空域和绘制航线不能同时进行
