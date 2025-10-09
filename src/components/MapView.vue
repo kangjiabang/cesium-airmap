@@ -264,7 +264,7 @@ import { ref, onMounted, onUnmounted, computed, provide, watch, watchEffect } fr
 import * as Cesium from "cesium"
 import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
-import FenceDrawer from "./FenceDrawer_old.vue"
+import FenceDrawer from "./FenceDrawer.vue"
 import DroneFlyController from "./DroneFlyControllerFixed.vue"
 import DroneReplayController from "./DroneReplayControllerv2.vue"
 import DronePathAnalyse from "./DronePathAnalyse.vue"
