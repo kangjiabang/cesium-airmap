@@ -118,14 +118,10 @@ let flightPathEntity = null
 
 // ✅ 新增：当前飞行时间显示
 const startTime = ref(null)
-const currentFlightTime = computed(() => {
-    if (!isFlying.value || !startTime.value) return "00:00"
 
-    const elapsedSeconds = Math.floor((Date.now() - startTime.value) / 1000)
-    const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0')
-    const seconds = (elapsedSeconds % 60).toString().padStart(2, '0')
-    return `${minutes}:${seconds}`
-})
+const currentFlightTime = ref("00:00")
+let flightTimer = null // 用于清理定时器
+
 
 // 3. 应用输入值（带验证）
 function applySpeed() {
@@ -384,6 +380,18 @@ const startFly = () => {
 
     isFlying.value = true
     startTime.value = Date.now() // ✅ 记录开始时间
+    // ✅ 启动飞行计时器
+    if (flightTimer) clearInterval(flightTimer)
+    flightTimer = setInterval(() => {
+        if (!isFlying.value || !startTime.value) {
+            currentFlightTime.value = "00:00"
+            return
+        }
+        const elapsedSeconds = Math.floor((Date.now() - startTime.value) / 1000)
+        const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0')
+        const seconds = (elapsedSeconds % 60).toString().padStart(2, '0')
+        currentFlightTime.value = `${minutes}:${seconds}`
+    }, 1000) // 每秒更新
 
     // 动画飞行
     const property = new Cesium.SampledPositionProperty()
@@ -806,6 +814,11 @@ onUnmounted(() => {
     const { viewer } = props;
 
     if (!viewer) return;
+
+    if (flightTimer) {
+        clearInterval(flightTimer)
+        flightTimer = null
+    }
 
     // 1. 移除无人机实体（如果存在）
     if (droneEntity.value) {
