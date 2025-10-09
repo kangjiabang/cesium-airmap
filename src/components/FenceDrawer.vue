@@ -952,6 +952,9 @@ const finishDrawingRectangle = (points) => {
             //perPositionHeight: true,
             height: editBottomHeight.value,
             extrudedHeight: editTopHeight.value,
+            // 👇 关键：控制顶面和底面是否显示
+            closeTop: false,      // 不显示顶面
+            closeBottom: false,   // 不显示底面
         },
         _isAirspacePolygon: true,
     });
@@ -975,7 +978,7 @@ const finishDrawingRectangle = (points) => {
                     const t = Date.now() * 0.3;
                     return 0.18 + 0.05 * Math.sin(t);
                 }, false),
-                taperPower: 0.5,
+                taperPower: 1.0,
             }),
         },
         _isAirspacePulse: true,
@@ -1058,6 +1061,9 @@ const finishDrawingSquare = (center, sideLength) => {
             //perPositionHeight: true,
             height: editBottomHeight.value,
             extrudedHeight: editTopHeight.value,
+            // 👇 关键：控制顶面和底面是否显示
+            closeTop: false,      // 不显示顶面
+            closeBottom: false,   // 不显示底面
         },
         _isAirspacePolygon: true,
     });
@@ -1081,7 +1087,7 @@ const finishDrawingSquare = (center, sideLength) => {
                     const t = Date.now() * 0.3;
                     return 0.18 + 0.05 * Math.sin(t);
                 }, false),
-                taperPower: 0.5,
+                taperPower: 1.0,
             }),
         },
         _isAirspacePulse: true,
@@ -1231,6 +1237,9 @@ const finishDrawingCircle = (center, radius) => {
             outline: false,
             // 🎨 使用用户选择的轮廓色
             outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
+            // 👇 关键：控制顶面和底面是否显示
+            closeTop: false,      // 不显示顶面
+            closeBottom: false,   // 不显示底面
         },
         _isAirspacePolygon: true,
     };
@@ -1334,7 +1343,7 @@ const finishDrawingCircle = (center, radius) => {
                         const t = Date.now() * 0.3;
                         return 0.18 + 0.05 * Math.sin(t);
                     }, false),
-                    taperPower: 0.5,
+                    taperPower: 1.0,
                 }),
                 classificationType: Cesium.ClassificationType.CESIUM_3D_TILE,
             },
@@ -1514,6 +1523,9 @@ const finishDrawingCustom = (positions) => {
             //perPositionHeight: true, // 贴合地形高度
             height: editBottomHeight.value,               // 由 perPositionHeight 决定实际底部
             extrudedHeight: editTopHeight.value,     // 墙体高度 3 米
+            // 👇 关键：控制顶面和底面是否显示
+            closeTop: false,      // 不显示顶面
+            closeBottom: false,   // 不显示底面
         },
         _isAirspacePolygon: true,
     });
@@ -1535,7 +1547,7 @@ const finishDrawingCustom = (positions) => {
                     const t = Date.now() * 0.3;
                     return 0.18 + 0.05 * Math.sin(t); // 脉冲效果
                 }, false),
-                taperPower: 0.5,
+                taperPower: 1.0,
             }),
         },
         _isAirspacePulse: true, // 用于后续清除
