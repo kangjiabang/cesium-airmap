@@ -653,8 +653,61 @@ const startFly = () => {
     viewer.clock.onTick.addEventListener(onTickListener);
 
     droneEntity.value.position = property;
+
+
+
+    // ======================
+    // 🔺 锥视视野可视化（终极修复：锥体尖端在无人机位置，向前延伸）
+    // ======================
+    const coneLength = 100.0;
+    const coneFov = Cesium.Math.toRadians(30);
+    const coneRadius = coneLength * Math.tan(coneFov);
+
     // ✅ 注释掉这行，因为朝向将在 onTick 中动态计算
-    // droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
+    if (!droneEntity.value.orientation) {
+        droneEntity.value.orientation = new Cesium.VelocityOrientationProperty(property);
+    }
+    // ✅ 关键：让圆柱体沿 X 轴延伸（无人机前向），而不是默认的 Z 轴
+    const rotationQuaternion = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Y, -Cesium.Math.PI_OVER_TWO);
+
+    const coneEntity = viewer.entities.add({
+        name: "无人机视野锥",
+        position: new Cesium.CallbackProperty(() => {
+            const dronePos = droneEntity.value.position.getValue(viewer.clock.currentTime);
+            const droneOri = droneEntity.value.orientation.getValue(viewer.clock.currentTime);
+
+            // 计算无人机前向单位向量（X轴方向）
+            const forwardVector = new Cesium.Cartesian3(1, 0, 0);
+            const rotatedForward = Cesium.Matrix3.multiplyByVector(
+                Cesium.Matrix3.fromQuaternion(droneOri),
+                forwardVector,
+                new Cesium.Cartesian3()
+            );
+
+            // 将锥体位置设在无人机前方一个长度处
+            // 这样锥体从该位置向后延伸，尖端正好落在无人机位置
+            const conePos = Cesium.Cartesian3.add(
+                dronePos,
+                Cesium.Cartesian3.multiplyByScalar(rotatedForward, coneLength / 2, new Cesium.Cartesian3()),
+                new Cesium.Cartesian3()
+            );
+
+            return conePos;
+        }, false),
+        orientation: new Cesium.CallbackProperty(() => {
+            const ori = droneEntity.value.orientation.getValue(viewer.clock.currentTime);
+            // 将 Cylinder 的 Z 轴旋转到 X 轴（即向前）→ 再乘以无人机朝向
+            return Cesium.Quaternion.multiply(ori, rotationQuaternion, new Cesium.Quaternion());
+        }, false),
+        cylinder: {
+            length: coneLength,
+            topRadius: 0.0,     // 尖端半径为0
+            bottomRadius: coneRadius, // 底部半径
+            material: Cesium.Color.YELLOW.withAlpha(0.3),
+            outline: true,
+            outlineColor: Cesium.Color.ORANGE
+        }
+    });
 
     viewer.clock.startTime = startJulianTime.clone();
     viewer.clock.stopTime = Cesium.JulianDate.addSeconds(startJulianTime, (smoothPathPoints.value.length - 1) * step, new Cesium.JulianDate());
