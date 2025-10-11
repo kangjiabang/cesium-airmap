@@ -1183,6 +1183,8 @@ onUnmounted(() => {
     if (editing.value) {
         exitEditMode();
     }
+
+    clearAll();
 });
 
 // 组件挂载时设置默认颜色

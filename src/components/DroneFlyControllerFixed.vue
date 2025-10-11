@@ -122,6 +122,9 @@ const startTime = ref(null)
 const currentFlightTime = ref("00:00")
 let flightTimer = null // 用于清理定时器
 
+// 在 script setup 顶部定义（和其他 ref 同级）
+let coneEntity = null;
+
 
 // 3. 应用输入值（带验证）
 function applySpeed() {
@@ -336,7 +339,8 @@ function addDroneEntity() {
         name: "无人机",
         position: initialPosition,
         model: {
-            uri: "models/drone_costum.glb",
+            uri: "models/four_drone.glb",
+            //uri: "models/drone_costum.glb",
             minimumPixelSize: 128,
             maximumScale: 100,
             // ✅ 关键：添加 scaleByDistance 到模型
@@ -670,11 +674,22 @@ const startFly = () => {
     // ✅ 关键：让圆柱体沿 X 轴延伸（无人机前向），而不是默认的 Z 轴
     const rotationQuaternion = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Y, -Cesium.Math.PI_OVER_TWO);
 
-    const coneEntity = viewer.entities.add({
+    coneEntity = viewer.entities.add({
         name: "无人机视野锥",
         position: new Cesium.CallbackProperty(() => {
+
+            // 防御检查
+            if (!isFlying.value || !droneEntity.value || !droneEntity.value.position || !droneEntity.value.orientation) {
+                return Cesium.Cartesian3.ZERO;
+            }
+
             const dronePos = droneEntity.value.position.getValue(viewer.clock.currentTime);
             const droneOri = droneEntity.value.orientation.getValue(viewer.clock.currentTime);
+
+            // 🔒 关键：检查 droneOri 是否有效
+            if (!dronePos || !droneOri) {
+                return Cesium.Cartesian3.ZERO;
+            }
 
             // 计算无人机前向单位向量（X轴方向）
             const forwardVector = new Cesium.Cartesian3(1, 0, 0);
@@ -695,7 +710,18 @@ const startFly = () => {
             return conePos;
         }, false),
         orientation: new Cesium.CallbackProperty(() => {
+
+            // 🔒 同样做防御性检查
+            if (!droneEntity.value || !droneEntity.value.orientation) {
+                return Cesium.Quaternion.IDENTITY;
+            }
+
             const ori = droneEntity.value.orientation.getValue(viewer.clock.currentTime);
+
+            // 🔥🔥 关键修复：检查 getValue() 的返回值是否为有效对象
+            if (!Cesium.defined(ori)) {
+                return Cesium.Quaternion.IDENTITY;
+            }
             // 将 Cylinder 的 Z 轴旋转到 X 轴（即向前）→ 再乘以无人机朝向
             return Cesium.Quaternion.multiply(ori, rotationQuaternion, new Cesium.Quaternion());
         }, false),
@@ -781,6 +807,15 @@ const stopFly = () => {
     const { viewer } = props;
 
     if (!isFlying.value) return;
+
+    // ✅ 第一件事：标记停止 + 移除锥体
+    isFlying.value = false; // 🔥 先设为 false，让回调能检测到
+
+    // ✅ 立即移除锥体，防止后续回调访问无效数据
+    if (coneEntity) {
+        viewer.entities.remove(coneEntity);
+        coneEntity = null;
+    }
 
     // 停止时钟动画
     viewer.clock.shouldAnimate = false;
