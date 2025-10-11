@@ -2,39 +2,7 @@
 <template>
     <div class="drawer-controls">
         <div class="control-header">
-            <h4>🚁 空域绘制</h4>
-        </div>
-
-        <!-- 空域形状选择 -->
-        <div class="shape-selector">
-            <label>空域形状:</label>
-            <select v-model="selectedShape" @change="onShapeChange">
-                <option value="custom">自定义绘制</option>
-                <option value="circle">圆形</option>
-                <option value="rectangle">矩形</option>
-                <option value="square">正方形</option>
-                <!-- 在 shape-selector 的 select 中新增 -->
-                <!-- <option value="tube">管状空域</option> -->
-            </select>
-        </div>
-
-        <!-- 空域类型选择 -->
-        <div class="type-selector">
-            <label>形状类型:</label>
-            <select v-model="airspaceType" @change="onTypeChange">
-                <option value="3d">立体</option>
-                <option value="2d">平面</option>
-            </select>
-        </div>
-
-        <!-- 🆕 新增：空域类型选择 -->
-        <div class="type-selector">
-            <label>空域类型:</label>
-            <select v-model="airspaceCategory" @change="onCategoryChange">
-                <option value="suitable">适飞区</option>
-                <option value="restricted">限飞区</option>
-                <option value="prohibited">禁飞区</option>
-            </select>
+            <h4>🚁 航道绘制</h4>
         </div>
         <!-- 🎨 新增：空域颜色选择 -->
         <div class="color-selector">
@@ -58,7 +26,7 @@
             <button @click="clearAll" class="danger-btn">清除所有</button>
 
             <!-- 在 clearAll 按钮之后或其他位置添加 -->
-            <button @click="saveAirspace" class="save-btn">保存空域</button>
+            <button @click="saveAirspace" class="save-btn">保存航道</button>
         </div>
 
         <!-- 编辑模式说明 -->
@@ -84,8 +52,7 @@
                 </label>
 
                 <!-- ✅ 新增：航道宽度（仅当编辑管状空域时显示） -->
-                <label v-if="editingEntityShape === 'tube'"> 航道宽度 (m): <input type="number"
-                        v-model.number="editTubeWidth" min="10" max="5000" />
+                <label> 航道宽度 (m): <input type="number" v-model.number="editTubeWidth" min="10" max="5000" />
                 </label>
             </div>
             <div class="edit-controls">
@@ -127,7 +94,7 @@ const editingVertices = ref([]); // 编辑顶点实体数组
 const draggedVertex = ref(null); // 当前拖拽的顶点
 const editBottomHeight = ref(100);
 const editTopHeight = ref(300);
-const selectedShape = ref('custom'); // 默认自定义绘制
+const selectedShape = ref('tube'); // 默认自定义绘制
 const airspaceType = ref('3d'); // 默认立体类型
 
 // 🆕 新增：空域类型（适飞、限飞、禁飞）
@@ -158,11 +125,8 @@ const setDefaultColors = () => {
 const getDrawingButtonText = () => {
     if (!drawing.value) {
         switch (selectedShape.value) {
-            case 'circle': return '开始绘制圆形空域';
-            case 'rectangle': return '开始绘制矩形空域';
-            case 'square': return '开始绘制正方形空域';
-            case 'custom': return '开始绘制空域';
-            case 'tube': return '开始绘制管状空域';
+
+            case 'tube': return '开始绘制管状航道';
         }
     }
     return '绘制中...';
@@ -174,14 +138,7 @@ const getInstructionText = () => {
         return '📝 点击空域进入编辑，拖拽顶点修改形状';
     }
     switch (selectedShape.value) {
-        case 'circle':
-            return '🖱️ 点击中心点，再点击边缘确定半径';
-        case 'rectangle':
-            return '🖱️ 点击两个对角点绘制矩形';
-        case 'square':
-            return '🖱️ 点击中心点，再点击边缘确定大小';
-        case 'custom':
-            return '🖱️ 左键点击添加点，双击完成绘制';
+
         case 'tube':
             return '🖱️ 左键点击添加路径点，右键结束绘制管状空域';
     }
@@ -234,13 +191,6 @@ const toggleEditMode = () => {
         enterEditMode();
     }
 };
-
-const editingEntityShape = computed(() => {
-    if (!editingEntity.value) return null;
-    const airspace = airspacePolygons.value.find(a => a.entity === editingEntity.value);
-    return airspace?.shape || null;
-});
-
 // 进入编辑模式
 const enterEditMode = () => {
     if (drawing.value) return;
@@ -264,9 +214,9 @@ const enterEditMode = () => {
             startDraggingVertex(picked.id, click.position);
         } else {
             // 点击空白区域，完成当前编辑
-            if (editingEntity.value) {
-                finishEditingEntity();
-            }
+            // if (editingEntity.value) {
+            //     finishEditingEntity();
+            // }
         }
     }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
 
@@ -374,79 +324,6 @@ const highlightEntity = (entity, highlight) => {
         entity.ellipse.outlineWidth = highlight ? 3 : 1;
     }
 };
-
-// 开始绘制管状空域
-// const startDrawingCorridor = () => {
-//     const { viewer } = props;
-//     const positions = [];
-//     handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-//     // 左键添加点
-//     handler.value.setInputAction((click) => {
-//         const cartesian = getCartesianFromClick(click);
-//         if (cartesian) {
-//             positions.push(cartesian);
-//             addPointMarker(cartesian, positions.length);
-//             console.log(`已添加第${positions.length}个路径点`);
-//         }
-//     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-//     // 右键结束绘制
-//     handler.value.setInputAction(() => {
-//         if (positions.length >= 2) {
-//             finishDrawingCorridor(positions);
-//         } else {
-//             console.warn('走廊空域至少需要2个点，当前点数:', positions.length);
-//         }
-//     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
-// };
-
-// // 完成管状空域绘制
-// const finishDrawingCorridor = (positions) => {
-//     const { viewer } = props;
-//     const heights = getCurrentHeights();
-
-//     // 管状宽度（可后续改为可配置）
-//     const width = 100; // 米
-
-//     const entityConfig = {
-//         name: `管状空域_${Date.now()}`,
-//         corridor: {
-//             positions: positions,
-//             width: width,
-//             material: Cesium.Color.fromCssColorString(fillColor.value).withAlpha(0.4),
-//             outline: true,
-//             outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
-//         },
-//         _isAirspacePolygon: true,
-//     };
-
-//     if (airspaceType.value === '3d') {
-//         entityConfig.corridor.height = heights.bottom;
-//         entityConfig.corridor.extrudedHeight = heights.top;
-//     } else {
-//         entityConfig.corridor.height = 100;
-//     }
-
-//     const entity = viewer.entities.add(entityConfig);
-
-//     // 保存空域数据（注意 shape 为 'tube'）
-//     airspacePolygons.value.push({
-//         positions: [...positions],
-//         entity: entity,
-//         bottomHeight: heights.bottom,
-//         topHeight: heights.top,
-//         shape: 'tube',
-//         width: width,
-//         type: airspaceType.value,
-//         category: airspaceCategory.value,
-//         fillColor: fillColor.value,
-//         outlineColor: outlineColor.value,
-//     });
-
-//     makeEditable(entity); // 可选：是否支持编辑？见下文说明
-//     stopDrawing();
-// };
 
 // 开始绘制管状空域
 const startDrawingTube = () => {
@@ -594,18 +471,7 @@ const saveAirspace = () => {
             console.log(`   📏 高度: 平面 (固定高度)`); // 2D 模式下的处理
         }
 
-        // 输出多边形点坐标 (仅适用于多边形类型：custom, rectangle, square)
-        if (airspace.shape !== 'circle') {
-            console.log(`   📐 多边形顶点 (${airspace.positions.length} 个):`);
-            airspace.positions.forEach((pos, i) => {
-                const carto = Cesium.Cartographic.fromCartesian(pos);
-                const lon = Cesium.Math.toDegrees(carto.longitude).toFixed(6);
-                const lat = Cesium.Math.toDegrees(carto.latitude).toFixed(6);
-                const height = carto.height.toFixed(2);
-                console.log(`     [${i + 1}] 经度: ${lon}, 纮度: ${lat}, 高度: ${height}m`);
-            });
-        }
-        else if (airspace.shape === 'tube') {
+        if (airspace.shape === 'tube') {
             console.log(`   🚇 管状空域宽度: ${airspace.width} 米`);
             console.log(`   📍 路径点 (${airspace.positions.length} 个):`);
             airspace.positions.forEach((pos, i) => {
@@ -643,14 +509,10 @@ const updateSelectedEntityColor = () => {
     const newOutlineColor = Cesium.Color.fromCssColorString(outlineColor.value);
 
     try {
-        if (entity.polygon) {
-            // 更新多边形的材质和轮廓色
-            entity.polygon.material = new Cesium.ColorMaterialProperty(newFillColor);
-            entity.polygon.outlineColor = new Cesium.ConstantProperty(newOutlineColor);
-        } else if (entity.ellipse) {
-            // 更新圆形的材质和轮廓色
-            entity.ellipse.material = new Cesium.ColorMaterialProperty(newFillColor);
-            entity.ellipse.outlineColor = new Cesium.ConstantProperty(newOutlineColor);
+        if (entity.polylineVolume) {
+            // ✅ 新增：支持管状空域颜色更新
+            entity.polylineVolume.material = new Cesium.ColorMaterialProperty(newFillColor);
+            entity.polylineVolume.outlineColor = new Cesium.ConstantProperty(newOutlineColor);
         }
 
         // ✅ 更新存储的数据
@@ -884,72 +746,7 @@ const updateEntityGeometry = (entity, vertexIndex, newPosition) => {
     const airspace = airspacePolygons.value.find(a => a.entity === entity);
     if (!airspace) return;
 
-    if (airspace.shape === 'circle') {
-        if (vertexIndex === 0) {
-            // 移动中心点
-            airspace.center = newPosition;
-            entity.position = newPosition;
-
-            // ✅ 提升新位置到目标高度
-            const carto = Cesium.Cartographic.fromCartesian(newPosition);
-            const elevatedCenter = Cesium.Cartesian3.fromRadians(
-                carto.longitude,
-                carto.latitude,
-                airspace.bottomHeight
-            );
-
-            // 更新实体位置（用于显示）
-            entity.position = elevatedCenter;
-
-            // 更新编辑顶点位置
-            // 更新编辑顶点位置
-            const radiusVertex = editingVertices.value[1];
-            if (radiusVertex) {
-                const radiusCarto = new Cesium.Cartographic(
-                    carto.longitude + (airspace.radius / (6378137.0 * Math.cos(carto.latitude))),
-                    carto.latitude,
-                    airspace.bottomHeight // ✅ 高度一致
-                );
-                const elevatedRadiusPoint = Cesium.Cartesian3.fromRadians(
-                    radiusCarto.longitude,
-                    radiusCarto.latitude,
-                    radiusCarto.height
-                );
-                radiusVertex.position = elevatedRadiusPoint;
-            }
-            // 更新半径线和标签
-            updateRadiusLine(airspace);
-
-        } else if (vertexIndex === 1) {
-            // 调整半径
-            // 调整半径
-            const centerCarto = Cesium.Cartographic.fromCartesian(airspace.center);
-            const newRadius = Cesium.Cartesian3.distance(airspace.center, newPosition);
-
-            // ✅ 计算新半径点，并保持在底部高度
-            const newRadiusCarto = new Cesium.Cartographic(
-                centerCarto.longitude + (newRadius / (6378137.0 * Math.cos(centerCarto.latitude))),
-                centerCarto.latitude,
-                airspace.bottomHeight
-            );
-            const elevatedNewPosition = Cesium.Cartesian3.fromRadians(
-                newRadiusCarto.longitude,
-                newRadiusCarto.latitude,
-                newRadiusCarto.height
-            );
-
-            // 更新数据
-            airspace.radius = newRadius;
-            entity.ellipse.semiMajorAxis = newRadius;
-            entity.ellipse.semiMinorAxis = newRadius;
-
-            // ✅ 更新顶点位置（保持高度）
-            draggedVertex.value.position = elevatedNewPosition;
-
-            // ✅ 更新半径线和标签
-            updateRadiusLine(airspace);
-        }
-    } else if (airspace.shape === 'tube') {
+    if (airspace.shape === 'tube') {
         // ✅ 管状空域：更新路径点
         airspace.positions[vertexIndex] = newPosition;
         // ✅ 直接赋值数组，Cesium 会自动处理
@@ -1109,19 +906,6 @@ const startDrawing = () => {
         case 'tube':
             startDrawingTube();
             break;
-        case 'circle':
-            startDrawingCircle();
-            break;
-        case 'rectangle':
-            startDrawingRectangle();
-            break;
-        case 'square':
-            startDrawingSquare();
-            break;
-        case 'custom':
-        default:
-            startDrawingCustom();
-            break;
     }
 };
 
@@ -1136,164 +920,7 @@ const getCurrentHeights = () => {
     };
 };
 
-// 绘制矩形（最保守修复版本）
-const startDrawingRectangle = () => {
-    const { viewer } = props;
-    const points = [];
 
-    handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-    handler.value.setInputAction((click) => {
-        const cartesian = getCartesianFromClick(click);
-        if (!cartesian) {
-            console.warn('无法获取有效的点击坐标');
-            return;
-        }
-
-        points.push(cartesian);
-        addPointMarker(cartesian, points.length);
-
-        if (points.length === 1) {
-            // 第一个点：只添加标记，不创建临时实体
-            console.log('已添加第一个点，等待第二个点');
-        } else if (points.length === 2) {
-            // 第二个点，完成矩形
-            finishDrawingRectangle(points);
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-};
-
-// 完成矩形绘制
-const finishDrawingRectangle = (points) => {
-    if (!points || points.length < 2 || !points[0] || !points[1]) {
-        console.warn("矩形绘制需要两个有效的点");
-        stopDrawing();
-        return;
-    }
-
-    const { viewer } = props;
-    const heights = getCurrentHeights();
-
-    // 创建矩形点集
-    let positions;
-    try {
-        positions = createRectangleHierarchy(points[0], points[1]);
-    } catch (error) {
-        console.warn('创建矩形层次结构时出错:', error);
-        stopDrawing();
-        return;
-    }
-
-    if (!positions || !Array.isArray(positions) || positions.length < 4) {
-        console.warn("生成的矩形点集无效");
-        stopDrawing();
-        return;
-    }
-
-    const hasInvalidPoint = positions.some(point => !point || !Cesium.defined(point));
-    if (hasInvalidPoint) {
-        console.warn("矩形点集中包含无效点");
-        stopDrawing();
-        return;
-    }
-
-    // ✅ 新增：计算边长并创建距离标签
-    const distanceLabels = [];
-    const numPositions = positions.length;
-    for (let i = 0; i < numPositions; i++) {
-        const start = positions[i];
-        const end = positions[(i + 1) % numPositions]; // 确保最后一条边闭合
-        const distance = Cesium.Cartesian3.distance(start, end);
-        const midPoint = Cesium.Cartesian3.lerp(start, end, 0.5, new Cesium.Cartesian3());
-
-        const labelEntity = viewer.entities.add({
-            position: midPoint,
-            label: {
-                text: `${Math.round(distance)}m`,
-                font: "bold 14px sans-serif",
-                fillColor: Cesium.Color.WHITE,
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 2,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -10),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
-            },
-            _isAirspaceLineMarker: true, // 用于清除
-        });
-        distanceLabels.push(labelEntity);
-    }
-
-    try {
-        const entityConfig = {
-            name: `矩形空域_${Date.now()}`,
-            polygon: {
-                hierarchy: new Cesium.PolygonHierarchy(positions),
-                // 🎨 使用用户选择的填充色（带透明度）
-                material: Cesium.Color.fromCssColorString(fillColor.value).withAlpha(0.4),
-                outline: true,
-                // 🎨 使用用户选择的轮廓色
-                outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
-            },
-            _isAirspacePolygon: true,
-        };
-
-        // 根据类型设置高度属性
-        if (airspaceType.value === '3d') {
-            entityConfig.polygon.height = heights.bottom;
-            entityConfig.polygon.extrudedHeight = heights.top;
-        } else {
-            entityConfig.polygon.height = 100;
-
-        }
-
-        const entity = viewer.entities.add(entityConfig);
-
-        airspacePolygons.value.push({
-            positions: positions,
-            entity: entity,
-            entityId: entity.id, // ✅ 新增：保存 id
-            bottomHeight: heights.bottom,
-            topHeight: heights.top,
-            shape: 'rectangle',
-            cornerPoints: points,
-            type: airspaceType.value,
-            category: airspaceCategory.value, // ✅ 保存空域类型
-            // ✅ 新增：保存距离标签引用
-            distanceLabels: distanceLabels,
-            // 🎨 新增：保存颜色信息
-            fillColor: fillColor.value,
-            outlineColor: outlineColor.value,
-        });
-
-        makeEditable(entity);
-    } catch (error) {
-        console.error('创建矩形实体时出错:', error);
-    }
-
-    stopDrawing();
-};
-
-// 改进的矩形点集创建函数
-const createRectangleHierarchy = (point1, point2) => {
-    const carto1 = Cesium.Cartographic.fromCartesian(point1);
-    const carto2 = Cesium.Cartographic.fromCartesian(point2);
-
-    const west = Math.min(carto1.longitude, carto2.longitude);
-    const east = Math.max(carto1.longitude, carto2.longitude);
-    const south = Math.min(carto1.latitude, carto2.latitude);
-    const north = Math.max(carto1.latitude, carto2.latitude);
-
-    // 逆时针顺序：SW -> SE -> NE -> NW
-    return [
-        Cesium.Cartesian3.fromRadians(west, south), // SW
-        Cesium.Cartesian3.fromRadians(east, south), // SE
-        Cesium.Cartesian3.fromRadians(east, north), // NE
-        Cesium.Cartesian3.fromRadians(west, north), // NW
-    ];
-};
 
 
 // 工具函数改进
@@ -1319,148 +946,6 @@ const getCartesianFromClick = (click) => {
     }
 };
 
-// 绘制圆形（最保守修复版本）
-const startDrawingCircle = () => {
-    const { viewer } = props;
-    const points = [];
-    let centerPoint = null;
-
-    handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-    handler.value.setInputAction((click) => {
-        const cartesian = getCartesianFromClick(click);
-        if (!cartesian) {
-            console.warn('无法获取有效的点击坐标');
-            return;
-        }
-
-        if (!centerPoint) {
-            // 第一次点击 - 设置中心点
-            centerPoint = cartesian;
-            points.push(cartesian);
-            addPointMarker(cartesian, 'C');
-            console.log('已设置圆形中心点，等待确定半径');
-        } else {
-            // 第二次点击 - 确定半径并完成
-            points[1] = cartesian;
-            const radius = Cesium.Cartesian3.distance(centerPoint, cartesian);
-            finishDrawingCircle(centerPoint, radius);
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-};
-
-
-
-// 完成圆形绘制
-const finishDrawingCircle = (center, radius) => {
-    const { viewer } = props;
-    const heights = getCurrentHeights();
-
-    const entityConfig = {
-        name: `圆形空域_${Date.now()}`,
-        position: center,
-        ellipse: {
-            semiMajorAxis: radius,
-            semiMinorAxis: radius,
-            // 🎨 使用用户选择的填充色（带透明度）
-            material: Cesium.Color.fromCssColorString(fillColor.value).withAlpha(0.4),
-            outline: true,
-            // 🎨 使用用户选择的轮廓色
-            outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
-        },
-        _isAirspacePolygon: true,
-    };
-
-    // 根据类型设置高度属性
-    if (airspaceType.value === '3d') {
-        entityConfig.ellipse.height = heights.bottom;
-        entityConfig.ellipse.extrudedHeight = heights.top;
-    } else {
-        entityConfig.ellipse.height = 100;
-    }
-
-    const entity = viewer.entities.add(entityConfig);
-
-    // 转换为多边形点集保存
-    const positions = [];
-    const segments = 32;
-    for (let i = 0; i < segments; i++) {
-        const angle = (i / segments) * 2 * Math.PI;
-        const x = center.x + radius * Math.cos(angle);
-        const y = center.y + radius * Math.sin(angle);
-        const z = center.z;
-        positions.push(new Cesium.Cartesian3(x, y, z));
-    }
-
-    const bottomHeight = airspaceType.value === '3d' ? heights.bottom : 100;
-
-    // 计算中心点（保持原有高度）
-    const centerWithHeight = Cesium.Cartesian3.fromRadians(
-        Cesium.Cartographic.fromCartesian(center).longitude,
-        Cesium.Cartographic.fromCartesian(center).latitude,
-        bottomHeight
-    );
-    // ✅ 添加半径线实体（初始指向东方）
-    // 计算东方向点，高度一致
-    const eastCartesian = computeEastPoint(center, radius, bottomHeight);
-
-    const radiusLineEntity = viewer.entities.add({
-        name: `radius-line-${entity.id}`,
-        polyline: {
-            positions: [centerWithHeight, eastCartesian],
-            width: 4,
-            material: new Cesium.PolylineDashMaterialProperty({
-                color: Cesium.Color.YELLOW,
-                dashLength: 8,
-            }),
-            // ❌ 移除 clampToGround
-            // clampToGround: true,
-            // ✅ 确保在3D空间中正确显示
-            classificationType: Cesium.ClassificationType.CESIUM_3D_TILE, // 可选：避免被地形遮挡
-        },
-        _isAirspaceLineMarker: true,
-    });
-
-    // ✅ 添加半径文字标签（显示距离）
-    const labelEntity = viewer.entities.add({
-        position: Cesium.Cartesian3.lerp(center, eastCartesian, 0.5, new Cesium.Cartesian3()),
-        label: {
-            text: `${Math.round(radius)}m`,
-            font: "bold 14px sans-serif",
-            fillColor: Cesium.Color.WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 3,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -10),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
-        },
-        _isAirspaceLineMarker: true,
-    });
-
-    airspacePolygons.value.push({
-        positions: positions,
-        entity: entity,
-        entityId: entity.id, // ✅ 新增：保存 id
-        bottomHeight: heights.bottom,
-        topHeight: heights.top,
-        shape: 'circle',
-        center: center,
-        radius: radius,
-        type: airspaceType.value,
-        category: airspaceCategory.value, // ✅ 保存空域类型
-        radiusLine: radiusLineEntity,   // ✅ 保存引用
-        radiusLabel: labelEntity,       // ✅ 保存引用
-        // 🎨 新增：保存颜色信息
-        fillColor: fillColor.value,
-        outlineColor: outlineColor.value,
-    });
-
-    makeEditable(entity);
-    stopDrawing();
-};
 
 // 工具函数：在给定中心点和距离下，计算正东方向的点
 const computeEastPoint = (center, distance, height = 0) => {
@@ -1481,113 +966,6 @@ const computeEastPoint = (center, distance, height = 0) => {
     );
 };
 
-// 绘制正方形（最保守修复版本）
-const startDrawingSquare = () => {
-    const { viewer } = props;
-    const points = [];
-    let centerPoint = null;
-
-    handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-    handler.value.setInputAction((click) => {
-        const cartesian = getCartesianFromClick(click);
-        if (!cartesian) {
-            console.warn('无法获取有效的点击坐标');
-            return;
-        }
-
-        if (!centerPoint) {
-            // 第一次点击 - 设置中心点
-            centerPoint = cartesian;
-            points.push(cartesian);
-            addPointMarker(cartesian, 'C');
-            console.log('已设置正方形中心点，等待确定大小');
-        } else {
-            // 第二次点击 - 确定大小并完成
-            points[1] = cartesian;
-            const sideLength = Cesium.Cartesian3.distance(centerPoint, cartesian);
-            finishDrawingSquare(centerPoint, sideLength);
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-};
-
-// 完成正方形绘制 (替换原函数)
-const finishDrawingSquare = (center, sideLength) => {
-    const { viewer } = props;
-    const heights = getCurrentHeights();
-    const positions = createSquareHierarchy(center, sideLength);
-
-    // ✅ 新增：计算边长并创建距离标签 (正方形四条边等长)
-    const distanceLabels = [];
-    const numPositions = positions.length;
-    for (let i = 0; i < numPositions; i++) {
-        const start = positions[i];
-        const end = positions[(i + 1) % numPositions];
-        // 对于正方形，也可以直接用 sideLength，但用distance更通用
-        const distance = Cesium.Cartesian3.distance(start, end);
-        const midPoint = Cesium.Cartesian3.lerp(start, end, 0.5, new Cesium.Cartesian3());
-
-        const labelEntity = viewer.entities.add({
-            position: midPoint,
-            label: {
-                text: `${Math.round(distance)}m`,
-                font: "bold 14px sans-serif",
-                fillColor: Cesium.Color.WHITE,
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 2,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -10),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
-            },
-            _isAirspaceLineMarker: true,
-        });
-        distanceLabels.push(labelEntity);
-    }
-
-    const entityConfig = {
-        name: `正方形空域_${Date.now()}`,
-        polygon: {
-            hierarchy: new Cesium.PolygonHierarchy(positions),
-            // 🎨 使用用户选择的填充色（带透明度）
-            material: Cesium.Color.fromCssColorString(fillColor.value).withAlpha(0.4),
-            outline: true,
-            // 🎨 使用用户选择的轮廓色
-            outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
-        },
-        _isAirspacePolygon: true,
-    };
-
-    if (airspaceType.value === '3d') {
-        entityConfig.polygon.height = heights.bottom;
-        entityConfig.polygon.extrudedHeight = heights.top;
-    } else {
-        entityConfig.polygon.height = 100;
-    }
-
-    const entity = viewer.entities.add(entityConfig);
-    airspacePolygons.value.push({
-        positions: positions,
-        entity: entity,
-        entityId: entity.id, // ✅ 新增：保存 id
-        bottomHeight: heights.bottom,
-        topHeight: heights.top,
-        shape: 'square',
-        center: center,
-        sideLength: sideLength,
-        type: airspaceType.value,
-        category: airspaceCategory.value, // ✅ 保存空域类型
-        // ✅ 新增：保存距离标签引用
-        distanceLabels: distanceLabels,
-        // 🎨 新增：保存颜色信息
-        fillColor: fillColor.value,
-        outlineColor: outlineColor.value,
-    });
-    makeEditable(entity);
-    stopDrawing();
-};
 
 const createSquareHierarchy = (center, sideLength) => {
     const carto = Cesium.Cartographic.fromCartesian(center);
@@ -1616,122 +994,6 @@ const createSquareHierarchy = (center, sideLength) => {
 };
 
 
-// 自定义绘制（最保守修复版本）
-const startDrawingCustom = () => {
-    const { viewer } = props;
-    const positions = [];
-
-    handler.value = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-
-    // 单击添加点
-    handler.value.setInputAction((click) => {
-        const cartesian = getCartesianFromClick(click);
-        if (cartesian) {
-            positions.push(cartesian);
-            addPointMarker(cartesian, positions.length);
-            console.log(`已添加第${positions.length}个点`);
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    // 双击结束绘制
-    handler.value.setInputAction((event) => {
-        event.preventDefault?.();
-        if (positions.length > 2) {
-            finishDrawingCustom(positions);
-        } else {
-            console.warn('需要至少3个点才能构成空域，当前点数:', positions.length);
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-
-    // 右键结束（备用）
-    handler.value.setInputAction(() => {
-        if (positions.length > 2) {
-            finishDrawingCustom(positions);
-        } else {
-            console.warn('需要至少3个点才能构成空域，当前点数:', positions.length);
-        }
-    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
-};
-
-// 完成自定义绘制
-// 完成自定义绘制 (替换原函数)
-const finishDrawingCustom = (positions) => {
-    if (!positions || positions.length < 3) {
-        console.warn("自定义绘制需要至少3个点");
-        stopDrawing();
-        return;
-    }
-    const { viewer } = props;
-    const heights = getCurrentHeights();
-
-    // ✅ 新增：计算所有边的距离并创建标签
-    const distanceLabels = [];
-    const numPositions = positions.length;
-    for (let i = 0; i < numPositions; i++) {
-        const start = positions[i];
-        const end = positions[(i + 1) % numPositions]; // 闭合多边形
-        const distance = Cesium.Cartesian3.distance(start, end);
-        const midPoint = Cesium.Cartesian3.lerp(start, end, 0.5, new Cesium.Cartesian3());
-
-        const labelEntity = viewer.entities.add({
-            position: midPoint,
-            label: {
-                text: `${Math.round(distance)}m`,
-                font: "bold 14px sans-serif",
-                fillColor: Cesium.Color.WHITE,
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 2,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -10),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 1.5e7, 0.5),
-            },
-            _isAirspaceLineMarker: true,
-        });
-        distanceLabels.push(labelEntity);
-    }
-
-    const entityConfig = {
-        name: `自定义空域_${Date.now()}`,
-        polygon: {
-            hierarchy: new Cesium.PolygonHierarchy(positions),
-            // 🎨 使用用户选择的填充色（带透明度）
-            material: Cesium.Color.fromCssColorString(fillColor.value).withAlpha(0.4),
-            outline: true,
-            // 🎨 使用用户选择的轮廓色
-            outlineColor: Cesium.Color.fromCssColorString(outlineColor.value),
-        },
-        _isAirspacePolygon: true,
-    };
-
-    if (airspaceType.value === '3d') {
-        entityConfig.polygon.height = heights.bottom;
-        entityConfig.polygon.extrudedHeight = heights.top;
-    } else {
-        entityConfig.polygon.height = 100;
-    }
-
-    const entity = viewer.entities.add(entityConfig);
-    airspacePolygons.value.push({
-        positions: [...positions],
-        entity: entity,
-        entityId: entity.id, // ✅ 新增：保存 id
-        bottomHeight: heights.bottom,
-        topHeight: heights.top,
-        shape: 'custom',
-        type: airspaceType.value,
-        category: airspaceCategory.value, // ✅ 保存空域类型
-        // ✅ 新增：保存距离标签引用
-        distanceLabels: distanceLabels,
-        // 🎨 新增：保存颜色信息
-        fillColor: fillColor.value,
-        outlineColor: outlineColor.value,
-    });
-    makeEditable(entity);
-    stopDrawing();
-};
 // 添加点标记
 const addPointMarker = (position, index) => {
     const { viewer } = props;

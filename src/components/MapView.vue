@@ -12,6 +12,8 @@
         <div class="controls-wrapper">
             <AirspaceDrawer v-if="viewer && isDrawingAirspace" :viewer="viewer" ref="airspaceDrawer" />
 
+            <AirlineDrawer v-if="viewer && isDrawingAirLine" :viewer="viewer" />
+
             <DronePathDrawer v-if="viewer && isDrawingFlightPath" :viewer="viewer" ref="dronePathDrawer" />
 
             <FenceDrawer v-if="viewer && showDrawFence" :viewer="viewer" />
@@ -263,6 +265,7 @@
 import { ref, onMounted, onUnmounted, computed, provide, watch, watchEffect } from "vue"
 import * as Cesium from "cesium"
 import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
+import AirlineDrawer from "@/components/AirlineDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import FenceDrawer from "./FenceDrawer.vue"
 import DroneFlyController from "./DroneFlyControllerFixed.vue"
@@ -287,6 +290,7 @@ const showFlyAreaController = ref(false)
 const showDronePathAnalyse = ref(false)
 const showDrawFence = ref(false)
 const isDrawingAirspace = ref(false)
+const isDrawingAirLine = ref(false)
 const isDrawingFlightPath = ref(false)
 
 const heatmapViewRef = ref(null)
@@ -366,7 +370,8 @@ const menuTreeData = ref([
         children: [
             { id: 11, label: "绘制空域", type: "drawAirspace" },
             { id: 12, label: "绘制航线", type: "drawFlightPath" },
-            { id: 13, label: "绘制电子围栏", type: "drawFence" }
+            { id: 13, label: "绘制电子围栏", type: "drawFence" },
+            { id: 14, label: "绘制航道", type: "drawAirLine" },
         ]
     },
     {
@@ -411,6 +416,7 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     isDrawingAirspace.value = checkedKeys.includes(11)
     isDrawingFlightPath.value = checkedKeys.includes(12)
     showDrawFence.value = checkedKeys.includes(13)
+    isDrawingAirLine.value = checkedKeys.includes(14)
 
     // 更新视觉效果状态
     showHeatmap.value = checkedKeys.includes(21)
