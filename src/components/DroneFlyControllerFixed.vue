@@ -42,7 +42,7 @@
         <div class="status-info">
             <span v-if="!canFly" class="status-hint">请先绘制航线</span>
             <span v-if="isFlying" class="status-flying">✈️ 飞行中... <span class="flight-time">{{ currentFlightTime
-            }}</span></span>
+                    }}</span></span>
         </div>
     </div>
 </template>
@@ -56,6 +56,7 @@ import { warning_effects, warning_effects_2, collision_effects } from '@/js/dana
 import * as turf from '@turf/turf'
 import { getNearstBuildingsWithinDistance } from '@/js/poligon_infos_intersect_distance.js'
 import { parseWKTCoordinates, bufferPolygon } from '@/js/parse_buildings.js'
+import { scanSurroundings } from '@/js/flight_distance_detect.js'
 
 // 创建 worker 实例
 const buildingWorker = new Worker(new URL('@/js/buildingWorker.js', import.meta.url), { type: 'module' })
@@ -75,6 +76,8 @@ buildingWorker.onmessage = (event) => {
         clearHighlightedBuilding()
     }
 }
+
+
 
 const props = defineProps({
     viewer: {
@@ -339,8 +342,7 @@ function addDroneEntity() {
         name: "无人机",
         position: initialPosition,
         model: {
-            uri: "models/four_drone.glb",
-            //uri: "models/drone_costum.glb",
+            uri: "/models/four_drone.glb",
             minimumPixelSize: 128,
             maximumScale: 100,
             // ✅ 关键：添加 scaleByDistance 到模型

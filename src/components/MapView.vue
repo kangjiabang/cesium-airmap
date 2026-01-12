@@ -29,6 +29,12 @@
             <!-- 航线分析控制器 - 根据菜单控制显示 -->
             <DronePathAnalyse v-if="viewer && showDronePathAnalyse" :viewer="viewer" :pathPoints="dronePathPoints" />
 
+            <!-- 航线冲突检测控制器 - 根据菜单控制显示 -->
+            <DronePathCollision v-if="viewer && showDronePathCollision" :viewer="viewer" />
+
+            <!-- 路径规划 - 新增功能 -->
+            <PathPlanner v-if="viewer && showPathPlanner" :viewer="viewer" />
+
             <!-- 雨效果 - 根据菜单控制显示 -->
             <RainEffect v-if="viewer && showRainEffect" :viewer="viewer" />
 
@@ -269,12 +275,14 @@ import AirlineDrawer from "@/components/AirlineDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import FenceDrawer from "./FenceDrawer.vue"
 import DroneFlyController from "./DroneFlyControllerFixed.vue"
-import DroneReplayController from "./DroneReplayControllerv2.vue"
+import DroneReplayController from "./DroneReplayController.vue"
 import DronePathAnalyse from "./DronePathAnalyse.vue"
 import RainEffect from "./RainEffect.vue"
 import SnowEffect from "./SnowEffect.vue"
 import HeatmapView from "./HeatmapView.vue"
 import LandingFieldManager from "@/components/LandingFieldManager.vue" // 👈 引入新组件
+import PathPlanner from "@/components/PathPlanner.vue"
+import DronePathCollision from "@/components/DronePathCollision.vue" // 👈 引入航线冲突检测组件
 
 // Element Plus
 import "element-plus/dist/index.css"
@@ -288,7 +296,9 @@ const showFlyController = ref(false)
 const showReplayController = ref(false)
 const showFlyAreaController = ref(false)
 const showDronePathAnalyse = ref(false)
+const showDronePathCollision = ref(false) // 👈 添加航线冲突检测状态
 const showDrawFence = ref(false)
+const showPathPlanner = ref(false)
 const isDrawingAirspace = ref(false)
 const isDrawingAirLine = ref(false)
 const isDrawingFlightPath = ref(false)
@@ -392,6 +402,8 @@ const menuTreeData = ref([
             { id: 31, label: "飞行模拟", type: "fly" },
             { id: 32, label: "飞行回放", type: "replay" },
             { id: 33, label: "航线分析", type: "fly" },
+            { id: 35, label: "航线冲突检测", type: "collision_detection" }, // 👈 添加航线冲突检测菜单项
+            { id: 34, label: "路径规划", type: "path_planning" }
         ]
     },
     {
@@ -427,6 +439,8 @@ const handleCheck = (checkedNodes, checkedInfo) => {
     showFlyController.value = checkedKeys.includes(31)
     showReplayController.value = checkedKeys.includes(32)
     showDronePathAnalyse.value = checkedKeys.includes(33)
+    showDronePathCollision.value = checkedKeys.includes(35) // 👈 添加航线冲突检测状态处理
+    showPathPlanner.value = checkedKeys.includes(34)
 
     showFlyAreaController.value = checkedKeys.includes(41)
 
@@ -473,6 +487,26 @@ const handleCheck = (checkedNodes, checkedInfo) => {
             showFlyController.value = false
             setTimeout(() => {
                 document.querySelector('.menu-tree').__vue__?.setChecked(31, false)
+            }, 0)
+        }
+    }
+
+    // 控制器互斥逻辑：航线分析和航线冲突检测不能同时开启
+    if (showDronePathAnalyse.value && showDronePathCollision.value) {
+        const analyseIndex = checkedKeys.indexOf(33)
+        const collisionIndex = checkedKeys.indexOf(35)
+
+        if (analyseIndex > collisionIndex) {
+            // 航线分析是最新选中的，取消航线冲突检测
+            showDronePathCollision.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(35, false)
+            }, 0)
+        } else {
+            // 航线冲突检测是最新选中的，取消航线分析
+            showDronePathAnalyse.value = false
+            setTimeout(() => {
+                document.querySelector('.menu-tree').__vue__?.setChecked(33, false)
             }, 0)
         }
     }
@@ -624,7 +658,9 @@ const toggleFeature = (featureType, state = null) => {
         rain: 22,
         snow: 23,
         fly: 31,
-        replay: 32
+        replay: 32,
+        collision_detection: 35, // 👈 添加航线冲突检测映射
+        path_planning: 34
     }
 
     const nodeId = featureMap[featureType]
