@@ -1,48 +1,98 @@
 <!-- DroneFlyController.vue -->
 <template>
     <div class="drone-fly-controls">
-        <button @click="startFly" :disabled="!canFly || isFlying" class="action-button start-button">
-            <span class="button-icon">✈️</span>
-            <span class="button-text">开始无人机飞行</span>
-        </button>
-        <button @click="stopFly" :disabled="!isFlying" class="action-button stop-button">
-            <span class="button-icon">⏹️</span>
-            <span class="button-text">停止无人机飞行</span>
-        </button>
+        <!-- 控制面板标题 -->
+        <div class="panel-header">
+            <div class="header-left">
+                <span class="header-icon">🚁</span>
+                <span class="header-title">无人机控制台</span>
+            </div>
+            <div class="header-status" :class="{ 'flying': isFlying, 'ready': canFly && !isFlying }">
+                <span class="status-dot"></span>
+                <span class="status-label">{{ isFlying ? '飞行中' : canFly ? '就绪' : '待命' }}</span>
+            </div>
+        </div>
 
-        <!-- ✅ 美化后的速度和飞行时间设置区域 -->
-        <div class="speed-control-panel" v-if="canFly && !isFlying">
-            <div class="control-item">
-                <label class="control-label">
-                    <span class="label-icon">⚡</span>
-                    <span class="label-text">飞行速度</span>
-                </label>
-                <div class="speed-input-wrapper">
-                    <!-- 修改 template：去掉 min/max -->
-                    <input id="drone-speed" type="number" v-model="droneSpeedInput" :disabled="isFlying"
-                        class="speed-input" @blur="applySpeed" @keyup.enter="applySpeed" />
-                    <span class="speed-unit">米/秒</span>
+        <!-- 操作按钮网格 -->
+        <div class="button-grid">
+            <button @click="loadFlyPathFromBackend" class="ctrl-btn load-btn" :disabled="isFlying">
+                <span class="btn-icon">📉</span>
+                <span class="btn-label">加载轨迹</span>
+            </button>
+
+            <button @click="loadNoFlyZones" class="ctrl-btn nofly-btn" :disabled="isFlying">
+                <span class="btn-icon">🚫</span>
+                <span class="btn-label">禁飞区域</span>
+            </button>
+
+            <button @click="startFly" :disabled="!canFly || isFlying" class="ctrl-btn start-btn"
+                :class="{ 'pulse-ready': canFly && !isFlying }">
+                <span class="btn-icon">✈️</span>
+                <span class="btn-label">开始飞行</span>
+            </button>
+
+            <button @click="stopFly" :disabled="!isFlying" class="ctrl-btn stop-btn"
+                :class="{ 'pulse-stop': isFlying }">
+                <span class="btn-icon">⏹</span>
+                <span class="btn-label">停止飞行</span>
+            </button>
+        </div>
+
+        <!-- 飞行参数配置 -->
+        <div class="params-panel" v-if="canFly && !isFlying">
+            <div class="param-row">
+                <div class="param-info">
+                    <span class="param-icon">⚡</span>
+                    <span class="param-name">速度</span>
+                </div>
+                <div class="param-control">
+                    <input type="number" v-model="droneSpeedInput" class="speed-input" @blur="applySpeed"
+                        @keyup.enter="applySpeed" />
+                    <span class="param-unit">m/s</span>
+                </div>
+                <div class="speed-indicator">
+                    <div class="speed-track">
+                        <div class="speed-fill" :style="{ width: Math.min(droneSpeed / 50 * 100, 100) + '%' }"></div>
+                    </div>
+                    <div class="speed-labels">
+                        <span>1</span>
+                        <span>25</span>
+                        <span>50</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="control-item">
-                <label class="control-label">
-                    <span class="label-icon">⏱️</span>
-                    <span class="label-text">预计飞行时间</span>
-                </label>
-                <div class="duration-display">
-                    <span class="duration-value">{{ formattedDuration }}</span>
-                    <span class="duration-icon" v-if="droneSpeed < 10">🐢</span>
-                    <span class="duration-icon" v-else-if="droneSpeed >= 10 && droneSpeed < 25">🚗</span>
-                    <span class="duration-icon" v-else>🚀</span>
+            <div class="param-row duration-row">
+                <div class="param-info">
+                    <span class="param-icon">⏱️</span>
+                    <span class="param-name">预计耗时</span>
+                </div>
+                <div class="duration-value">
+                    {{ formattedDuration }}
+                    <span class="speed-emoji">{{ droneSpeed < 10 ? '🐢' : droneSpeed < 25 ? '🚁' : '⚡' }}</span>
                 </div>
             </div>
         </div>
 
-        <div class="status-info">
-            <span v-if="!canFly" class="status-hint">请先绘制航线</span>
-            <span v-if="isFlying" class="status-flying">✈️ 飞行中... <span class="flight-time">{{ currentFlightTime
-                    }}</span></span>
+        <!-- 飞行状态 -->
+        <div class="flight-status" :class="{ 'is-flying': isFlying }">
+            <template v-if="!canFly">
+                <span class="status-icon-small">📍</span>
+                <span class="status-msg">请先加载或绘制航线</span>
+            </template>
+            <template v-else-if="isFlying">
+                <div class="flying-indicator">
+                    <span class="flying-dot"></span>
+                    <span class="flying-dot"></span>
+                    <span class="flying-dot"></span>
+                </div>
+                <span class="status-msg flying-msg">飞行进行中</span>
+                <span class="flight-timer">{{ currentFlightTime }}</span>
+            </template>
+            <template v-else>
+                <span class="status-icon-small">✅</span>
+                <span class="status-msg">航线就绪，可以起飞</span>
+            </template>
         </div>
     </div>
 </template>
@@ -57,6 +107,7 @@ import * as turf from '@turf/turf'
 import { getNearstBuildingsWithinDistance } from '@/js/poligon_infos_intersect_distance.js'
 import { parseWKTCoordinates, bufferPolygon } from '@/js/parse_buildings.js'
 import { scanSurroundings } from '@/js/flight_distance_detect.js'
+import { api } from '../js/api.js';
 
 // 创建 worker 实例
 const buildingWorker = new Worker(new URL('@/js/buildingWorker.js', import.meta.url), { type: 'module' })
@@ -116,7 +167,7 @@ const droneSpeed = ref(10); // ✅ 默认速度：10 米/秒
 // 2. 新增一个用于输入框的临时值（可以是字符串/空/非法）
 const droneSpeedInput = ref('10');
 const droneEntity = ref(null)
-
+const noFlyZoneEntities = ref([])
 let flightPathEntity = null
 
 // ✅ 新增：当前飞行时间显示
@@ -933,7 +984,10 @@ onUnmounted(() => {
         highlightedBuildingEntity = null;
     }
 
-    // 5. 终止 Worker（避免内存泄漏）
+    // 5. 移除禁飞区实体（如果存在）
+    clearNoFlyZones();
+
+    // 6. 终止 Worker（避免内存泄漏）
     if (buildingWorker) {
         buildingWorker.terminate();
     }
@@ -941,317 +995,487 @@ onUnmounted(() => {
     console.log('✅ DroneFlyController 已卸载，清理所有实体和资源');
 });
 
+const loadFlyPathFromBackend = async () => {
+    if (isFlying.value) return;
+
+    try {
+        const response = await api.getFlightPlanPathsByDrone("c3");
+
+        const flyPathInfo = response.flyPathInfo;
+        if (!flyPathInfo || !Array.isArray(flyPathInfo.path)) {
+            alert("后端返回的轨迹数据不合法");
+            return;
+        }
+
+        // 🔥 将后端 path 转为 Cesium Cartesian3
+        const cartesianPoints = flyPathInfo.path.map(p =>
+            Cesium.Cartesian3.fromDegrees(
+                p.lon,
+                p.lat,
+                p.height
+            )
+        );
+
+        if (cartesianPoints.length < 2) {
+            alert("轨迹点数量不足，无法飞行");
+            return;
+        }
+
+        // ✅ 更新内部路径
+        pathPoints.value = cartesianPoints;
+
+        // ✅ 重新绘制轨迹
+        drawFlightPath(cartesianPoints);
+
+        // ✅ 如果无人机实体还不存在，创建
+        if (!droneEntity.value) {
+            addDroneEntity();
+        } else {
+            // 将无人机放到起点
+            droneEntity.value.position = new Cesium.ConstantPositionProperty(cartesianPoints[0]);
+        }
+
+        console.log("✅ 成功加载无人机轨迹", flyPathInfo);
+
+    } catch (err) {
+        console.error("加载无人机轨迹失败:", err);
+        alert("加载无人机轨迹失败，请检查后端接口");
+    }
+};
+
+// 新增：加载禁飞区的方法
+const loadNoFlyZones = async () => {
+    try {
+        // 先清除之前的禁飞区
+        clearNoFlyZones();
+
+        console.log("正在加载禁飞区...");
+        const response = await api.getNoFlyZones();
+
+        if (response && response.zones) {
+            const noFlyZones = response.zones;
+
+            if (Array.isArray(noFlyZones) && noFlyZones.length > 0) {
+                renderNoFlyZones(noFlyZones);
+                console.log(`✅ 成功加载 ${noFlyZones.length} 个禁飞区`);
+                alert(`成功加载 ${noFlyZones.length} 个禁飞区`);
+            } else {
+                console.log("没有找到禁飞区数据");
+                alert("未获取到任何禁飞区数据");
+            }
+        } else {
+            console.log("禁飞区数据格式不正确");
+            alert("禁飞区数据格式不正确");
+        }
+    } catch (err) {
+        console.error("加载禁飞区失败:", err);
+        alert(`加载禁飞区失败: ${err.message || err}`);
+    }
+};
+
+// 新增：渲染禁飞区的方法
+const renderNoFlyZones = (zones) => {
+    zones.forEach(zone => {
+        if (!zone.geometry || !zone.geometry.coordinates) {
+            console.warn("跳过无效的禁飞区数据:", zone);
+            return;
+        }
+
+        // 解析GeoJSON格式的几何体
+        if (zone.geometry.type === 'Polygon') {
+            // GeoJSON坐标是[longitude, latitude]格式
+            const coordinates = zone.geometry.coordinates[0]; // 外环坐标
+            const positions = coordinates.map(coord =>
+                Cesium.Cartesian3.fromDegrees(coord[0], coord[1])
+            );
+
+            const entity = props.viewer.entities.add({
+                name: '禁飞区',
+                description: `禁飞区: 高度 ${zone.z_min}m - ${zone.z_max}m`,
+                polygon: {
+                    hierarchy: new Cesium.PolygonHierarchy(positions),
+                    material: Cesium.Color.RED.withAlpha(0.3),
+                    outline: true,
+                    outlineColor: Cesium.Color.RED,
+                    outlineWidth: 2,
+                    height: zone.z_min,  // 底部高度
+                    extrudedHeight: zone.z_max, // 顶部高度
+                    classificationType: Cesium.ClassificationType.TERRAIN
+                }
+            });
+
+            noFlyZoneEntities.value.push(entity);
+        }
+    });
+};
+
+// 新增：清除禁飞区的方法
+const clearNoFlyZones = () => {
+    if (props.viewer && noFlyZoneEntities.value) {
+        noFlyZoneEntities.value.forEach(entity => {
+            props.viewer.entities.remove(entity);
+        });
+        noFlyZoneEntities.value = [];
+    }
+};
 
 </script>
 
 <style scoped>
 .drone-fly-controls {
+    width: 320px;
+    background: rgba(20, 20, 24, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    padding: 16px;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    background: rgba(30, 30, 30, 0.8);
-    padding: 16px;
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    color: white;
-    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-}
-
-/* 美化按钮样式 */
-.action-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 14px;
-    transition: all 0.3s ease;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.start-button {
-    background: linear-gradient(135deg, #43a047, #2e7d32);
-    color: white;
-}
-
-.start-button:hover:not(:disabled) {
-    background: linear-gradient(135deg, #4caf50, #388e3c);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(67, 160, 71, 0.4);
-}
-
-.stop-button {
-    background: linear-gradient(135deg, #f44336, #d32f2f);
-    color: white;
-}
-
-.stop-button:hover:not(:disabled) {
-    background: linear-gradient(135deg, #f55a4e, #e53935);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
-}
-
-.action-button:disabled {
-    background: #555;
-    color: #888;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.button-icon {
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-}
-
-/* 美化速度控制面板 */
-.speed-control-panel {
-    background: rgba(40, 40, 40, 0.7);
-    padding: 16px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.control-item {
-    display: flex;
-    align-items: center;
     gap: 16px;
-    margin-bottom: 16px;
-    padding-bottom: 16px;
+    user-select: none;
+}
+
+/* --- 顶部标题栏 --- */
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.control-item:last-child {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.control-label {
+.header-icon {
+    font-size: 20px;
+}
+
+.header-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #e0e0e0;
+}
+
+.header-status {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #e0e0e0;
-    min-width: 120px;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.3s ease;
 }
 
-.label-icon {
-    font-size: 18px;
-}
-
-/* 美化滑块 */
-.speed-input-wrapper {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.speed-slider {
-    flex: 1;
-    height: 8px;
-    border-radius: 4px;
-    background: #333;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    cursor: pointer;
-}
-
-.speed-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
+.status-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: #43a047;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    border: 2px solid #2e7d32;
-    transition: all 0.2s ease;
+    background-color: #666;
 }
 
-.speed-slider::-webkit-slider-thumb:hover {
-    background: #4caf50;
-    transform: scale(1.1);
+.header-status.ready .status-dot {
+    background-color: #4ade80;
+    box-shadow: 0 0 8px #4ade80;
 }
 
-.speed-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #43a047;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    border: 2px solid #2e7d32;
-    transition: all 0.2s ease;
+.header-status.ready {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
 }
 
-/* 速度值显示 */
-.speed-value-display {
+.header-status.flying .status-dot {
+    background-color: #fbbf24;
+    animation: blink 1s infinite;
+}
+
+.header-status.flying {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+}
+
+/* --- 按钮网格布局 --- */
+.button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.ctrl-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-width: 80px;
-    max-width: 80px;
-    /* ✅ 限制最大宽度 */
-    text-align: center;
-    /* ✅ 文本居中对齐 */
-    overflow: hidden;
-    /* ✅ 防止内容溢出 */
-    text-overflow: ellipsis;
-    /* ✅ 溢出时显示省略号 */
-    white-space: nowrap;
-    /* ✅ 不换行，配合 ellipsis */
-}
-
-.speed-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: #43a047;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.speed-unit {
-    font-size: 12px;
-    color: #aaa;
-}
-
-/* 飞行时间显示 */
-.duration-display {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 100px;
-}
-
-.duration-value {
-    font-size: 16px;
-    font-weight: 600;
-    color: #ff9800;
-}
-
-.duration-icon {
-    font-size: 18px;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0% {
-        transform: scale(1);
-    }
-
-    50% {
-        transform: scale(1.1);
-    }
-
-    100% {
-        transform: scale(1);
-    }
-}
-
-/* 状态信息 */
-.status-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-}
-
-.status-hint {
-    color: #888;
-    font-style: italic;
-}
-
-.status-flying {
-    color: #43a047;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.flight-time {
-    background: rgba(67, 160, 71, 0.2);
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 12px;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(255, 255, 255, 0.08);
+    color: #e0e0e0;
+    font-size: 13px;
     font-weight: 500;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-    .drone-fly-controls {
-        padding: 12px;
+.ctrl-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+.ctrl-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.ctrl-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* 特定按钮样式 */
+.start-btn {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(21, 128, 61, 0.2));
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    grid-column: 1 / 2;
+}
+
+.start-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.4), rgba(21, 128, 61, 0.4));
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.2);
+}
+
+.stop-btn {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.2));
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.stop-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.4), rgba(185, 28, 28, 0.4));
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+}
+
+.btn-icon {
+    font-size: 20px;
+}
+
+/* 脉冲动画 */
+.pulse-ready {
+    animation: border-pulse 2s infinite;
+}
+
+@keyframes border-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
     }
 
-    .control-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+    70% {
+        box-shadow: 0 0 0 6px rgba(74, 222, 128, 0);
     }
 
-    .control-label {
-        min-width: auto;
-    }
-
-    .speed-input-wrapper {
-        width: 100%;
+    100% {
+        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
     }
 }
 
-/* 美化数字输入框 */
-.speed-input {
-    width: 80px;
-    padding: 8px 12px;
-    border: 2px solid #43a047;
+/* --- 参数面板 --- */
+.params-panel {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.param-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.param-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #94a3b8;
+    min-width: 60px;
+}
+
+.param-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px 8px;
     border-radius: 6px;
-    background: #222;
-    color: white;
-    font-size: 16px;
-    font-weight: 600;
-    text-align: center;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+.speed-input {
+    width: 40px;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: right;
     outline: none;
-    transition: border-color 0.2s ease;
 }
 
-.speed-input:focus {
-    border-color: #4caf50;
-    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.3);
+.param-unit {
+    font-size: 12px;
+    color: #64748b;
 }
 
-.speed-input::-webkit-outer-spin-button,
-.speed-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+/* 速度进度条 */
+.speed-indicator {
+    width: 100%;
+    margin-top: 4px;
 }
 
-.speed-input[type="number"] {
-    -moz-appearance: textfield;
-    /* Firefox 去掉上下箭头 */
+.speed-track {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
 }
 
-/* 调整输入框和单位的布局 */
-.speed-input-wrapper {
+.speed-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ade80, #22c55e);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.speed-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #475569;
+    margin-top: 4px;
+}
+
+/* 预计耗时行 */
+.duration-row {
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.duration-value {
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fbbf24;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* --- 底部状态栏 --- */
+.flight-status {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1;
+    font-size: 13px;
+    color: #94a3b8;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
 }
 
-.speed-unit {
-    color: #aaa;
+.status-icon-small {
     font-size: 14px;
+}
+
+/* 飞行中动画 */
+.flying-indicator {
+    display: flex;
+    gap: 3px;
+    align-items: flex-end;
+    height: 12px;
+    padding-bottom: 2px;
+}
+
+.flying-dot {
+    width: 2px;
+    background-color: #fbbf24;
+    animation: height-wave 1s infinite ease-in-out;
+}
+
+.flying-dot:nth-child(1) {
+    animation-delay: 0s;
+    height: 6px;
+}
+
+.flying-dot:nth-child(2) {
+    animation-delay: 0.1s;
+    height: 10px;
+}
+
+.flying-dot:nth-child(3) {
+    animation-delay: 0.2s;
+    height: 8px;
+}
+
+@keyframes height-wave {
+
+    0%,
+    100% {
+        transform: scaleY(0.5);
+    }
+
+    50% {
+        transform: scaleY(1);
+    }
+}
+
+.flying-msg {
+    color: #fbbf24;
+    font-weight: 500;
+}
+
+.flight-timer {
+    margin-left: auto;
+    font-family: monospace;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* --- 响应式微调 --- */
+@media (max-width: 480px) {
+    .drone-fly-controls {
+        width: 100%;
+        max-width: 320px;
+    }
 }
 </style>

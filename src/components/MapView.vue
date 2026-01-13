@@ -274,7 +274,7 @@ import AirspaceDrawer from "@/components/AirspaceDrawer.vue"
 import AirlineDrawer from "@/components/AirlineDrawer.vue"
 import DronePathDrawer from "./DronePathDrawer.vue"
 import FenceDrawer from "./FenceDrawer.vue"
-import DroneFlyController from "./DroneFlyControllerFixed.vue"
+import DroneFlyController from "./DroneFlyController.vue"
 import DroneReplayController from "./DroneReplayController.vue"
 import DronePathAnalyse from "./DronePathAnalyse.vue"
 import RainEffect from "./RainEffect.vue"
@@ -716,6 +716,7 @@ const initMap = async () => {
             navigationHelpButton: false
         })
 
+
         // 加载3D瓦片集
         try {
             const tileset = viewer.value.scene.primitives.add(
@@ -731,6 +732,7 @@ const initMap = async () => {
                 destination: Cesium.Cartesian3.fromDegrees(116.4, 39.9, 1000)
             })
         }
+        viewer.value.resolutionScale = Math.min(window.devicePixelRatio, 1.0);
     } catch (error) {
         console.error('地图初始化失败:', error)
     }

@@ -1,4 +1,4 @@
-import * as Cesium from 'cesium';
+import * as Cesium from "cesium";
 
 export class DroneGroupReplayPlayer {
   constructor(viewer, options = {}) {
@@ -30,7 +30,7 @@ export class DroneGroupReplayPlayer {
     this._midPosition = {}; // id → midpoint
     this._distanceText = {}; // id → "123m"
 
-    console.log('[DroneGroupReplay] 初始化完成');
+    console.log("[DroneGroupReplay] 初始化完成");
   }
 
   addUav(cfg) {
@@ -51,7 +51,10 @@ export class DroneGroupReplayPlayer {
         const lon = a.lon + ((b.lon - a.lon) * s) / steps;
         const lat = a.lat + ((b.lat - a.lat) * s) / steps;
         const h = a.height + ((b.height - a.height) * s) / steps;
-        const t = new Date(new Date(a.time).getTime() + ((new Date(b.time) - new Date(a.time)) * s) / steps);
+        const t = new Date(
+          new Date(a.time).getTime() +
+            ((new Date(b.time) - new Date(a.time)) * s) / steps
+        );
         smooth.push({ lon, lat, height: h, time: t });
       }
     }
@@ -72,14 +75,16 @@ export class DroneGroupReplayPlayer {
 
     /** 位置插值 */
     const posProp = new Cesium.SampledPositionProperty();
-    path.forEach((p) => posProp.addSample(Cesium.JulianDate.fromDate(p.time), p.position));
+    path.forEach((p) =>
+      posProp.addSample(Cesium.JulianDate.fromDate(p.time), p.position)
+    );
     posProp.setInterpolationOptions({
       interpolationAlgorithm: Cesium.LagrangePolynomialApproximation,
       interpolationDegree: 5,
     });
 
     /** 轨迹线颜色 */
-    const colorStr = cfg.color || `hsl(${this.uavs.size * 0.15 * 360}, 70%, 50%)`;
+    const colorStr = cfg.color || "green";
     let color;
     try {
       color = Cesium.Color.fromCssColorString(colorStr);
@@ -96,9 +101,34 @@ export class DroneGroupReplayPlayer {
         material: isMaster
           ? color.withAlpha(0.9)
           : new Cesium.PolylineDashMaterialProperty({
-              color: color.withAlpha(0.6),
+              color: color.withAlpha(0.9),
               dashLength: 16.0,
             }),
+      },
+    });
+
+    // --- 新增：添加真实航线标签 ---
+    const rawPositions = path.map((p) => p.position);
+    const centerIndex = Math.floor(rawPositions.length / 2);
+    const centerPosition = rawPositions[centerIndex];
+
+    // 根据是否为主无人机，决定显示“真实航线”还是“周围航线”
+    const labelDisplayName = isMaster ? `${id} 真实航线` : `${id} 周围航线`;
+
+    const pathLabel = this.viewer.entities.add({
+      name: `${id} 真实航线标签`,
+      position: centerPosition,
+      label: {
+        text: labelDisplayName,
+        font: "14pt sans-serif",
+        fillColor: color, // 使用该无人机分配的轨迹颜色
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -10),
+        scale: 0.8,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY, // 确保标签不被模型遮挡
       },
     });
 
@@ -108,7 +138,7 @@ export class DroneGroupReplayPlayer {
       name: id,
       position: posProp,
       model: {
-        uri: this.modelUri || '/cesium/model/fixedWingUav.glb',
+        uri: this.modelUri || "/cesium/model/fixedWingUav.glb",
         minimumPixelSize: 128,
         maximumScale: 200,
         color,
@@ -122,8 +152,8 @@ export class DroneGroupReplayPlayer {
       labelEntity = this.viewer.entities.add({
         position: posProp,
         label: {
-          text: '',
-          font: '16px sans-serif',
+          text: "",
+          font: "16px sans-serif",
           fillColor: Cesium.Color.YELLOW,
           outlineColor: Cesium.Color.BLACK,
           outlineWidth: 2,
@@ -154,9 +184,9 @@ export class DroneGroupReplayPlayer {
       }, false),
       label: {
         text: new Cesium.CallbackProperty(() => {
-          return this._distanceText[id] || '';
+          return this._distanceText[id] || "";
         }, false),
-        font: '14px sans-serif',
+        font: "14px sans-serif",
         fillColor: Cesium.Color.RED,
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 2,
@@ -176,6 +206,7 @@ export class DroneGroupReplayPlayer {
       posProp,
       entity,
       label: labelEntity,
+      pathLabel: pathLabel, // 将标签存入 map 方便清理
       polyline,
       nearestLine,
       distanceLabel,
@@ -198,7 +229,7 @@ export class DroneGroupReplayPlayer {
     for (const uav of list) {
       this._nearestPositions[uav.id] = [];
       this._midPosition[uav.id] = Cesium.Cartesian3.ZERO;
-      this._distanceText[uav.id] = '';
+      this._distanceText[uav.id] = "";
     }
 
     // 检查主无人机是否存在
@@ -234,7 +265,11 @@ export class DroneGroupReplayPlayer {
 
       // ⭐ 更新主无人机的连线缓存（连线起点）
       this._nearestPositions[idA] = [posA, posB_nearest];
-      const mid = Cesium.Cartesian3.midpoint(posA, posB_nearest, new Cesium.Cartesian3());
+      const mid = Cesium.Cartesian3.midpoint(
+        posA,
+        posB_nearest,
+        new Cesium.Cartesian3()
+      );
       this._midPosition[idA] = mid;
       this._distanceText[idA] = `${minDist.toFixed(1)} m`;
 
@@ -255,7 +290,7 @@ export class DroneGroupReplayPlayer {
       // 我们只让主无人机显示连线和标签，而让最近无人机不显示。
       this._nearestPositions[idB] = [];
       this._midPosition[idB] = Cesium.Cartesian3.ZERO;
-      this._distanceText[idB] = '';
+      this._distanceText[idB] = "";
     }
   }
 
@@ -293,13 +328,16 @@ export class DroneGroupReplayPlayer {
       const curSec = (Cesium.JulianDate.toDate(jd) - this.startTime) / 1000;
       if (this.timelineSlider) this.timelineSlider.value = curSec;
       if (this.timelineCurrent)
-        this.timelineCurrent.textContent = this._formatTime(new Date(this.startTime.getTime() + curSec * 1000));
+        this.timelineCurrent.textContent = this._formatTime(
+          new Date(this.startTime.getTime() + curSec * 1000)
+        );
 
       this.onTick && this.onTick(curSec);
     };
 
     this.viewer.scene.postRender.addEventListener(updateFn);
-    this._removePostRender = () => this.viewer.scene.postRender.removeEventListener(updateFn);
+    this._removePostRender = () =>
+      this.viewer.scene.postRender.removeEventListener(updateFn);
   }
 
   // ... 其他方法保持不变 (pause, reset, setProgress, _updateLabel, _formatTime, _initTimeline, _clearTimeline, clearAll) ...
@@ -328,7 +366,8 @@ export class DroneGroupReplayPlayer {
     this._updateNearestDistances(jd);
 
     if (this.timelineSlider) this.timelineSlider.value = seconds;
-    if (this.timelineCurrent) this.timelineCurrent.textContent = this._formatTime(target);
+    if (this.timelineCurrent)
+      this.timelineCurrent.textContent = this._formatTime(target);
   }
 
   _updateLabel(uav, jd) {
@@ -347,82 +386,84 @@ export class DroneGroupReplayPlayer {
   }
 
   _formatTime(date) {
-    if (!(date instanceof Date)) return '00:00:00';
-    const h = String(date.getHours()).padStart(2, '0');
-    const m = String(date.getMinutes()).padStart(2, '0');
-    const s = String(date.getSeconds()).padStart(2, '0');
+    if (!(date instanceof Date)) return "00:00:00";
+    const h = String(date.getHours()).padStart(2, "0");
+    const m = String(date.getMinutes()).padStart(2, "0");
+    const s = String(date.getSeconds()).padStart(2, "0");
     return `${h}:${m}:${s}`;
   }
 
   _initTimeline() {
     if (!this.viewer || this.timelineContainer) return;
 
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.bottom = '20px';
-    container.style.left = '50%';
-    container.style.transform = 'translateX(-50%)';
-    container.style.width = '60%';
-    container.style.padding = '8px 12px';
-    container.style.background = 'rgba(0,0,0,0.45)';
-    container.style.borderRadius = '8px';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.gap = '6px';
-    container.style.color = 'white';
-    container.style.fontFamily = 'sans-serif';
-    container.style.zIndex = '999';
+    const container = document.createElement("div");
+    container.style.position = "absolute";
+    container.style.bottom = "20px";
+    container.style.left = "50%";
+    container.style.transform = "translateX(-50%)";
+    container.style.width = "60%";
+    container.style.padding = "8px 12px";
+    container.style.background = "rgba(0,0,0,0.45)";
+    container.style.borderRadius = "8px";
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.style.gap = "6px";
+    container.style.color = "white";
+    container.style.fontFamily = "sans-serif";
+    container.style.zIndex = "999";
     this.timelineContainer = container;
 
-    const currentRow = document.createElement('div');
-    currentRow.style.textAlign = 'center';
-    currentRow.style.fontSize = '14px';
-    const current = document.createElement('div');
-    current.textContent = '00:00:00';
+    const currentRow = document.createElement("div");
+    currentRow.style.textAlign = "center";
+    currentRow.style.fontSize = "14px";
+    const current = document.createElement("div");
+    current.textContent = "00:00:00";
     this.timelineCurrent = current;
     currentRow.appendChild(current);
 
-    const sliderRow = document.createElement('div');
-    sliderRow.style.display = 'flex';
-    sliderRow.style.alignItems = 'center';
-    sliderRow.style.gap = '8px';
+    const sliderRow = document.createElement("div");
+    sliderRow.style.display = "flex";
+    sliderRow.style.alignItems = "center";
+    sliderRow.style.gap = "8px";
 
-    const start = document.createElement('div');
-    start.style.width = '60px';
-    start.style.textAlign = 'center';
+    const start = document.createElement("div");
+    start.style.width = "60px";
+    start.style.textAlign = "center";
     start.textContent = this._formatTime(this.startTime);
     this.timelineStart = start;
 
-    const slider = document.createElement('input');
-    slider.type = 'range';
+    const slider = document.createElement("input");
+    slider.type = "range";
     slider.min = 0;
     slider.max = this.maxSeconds;
     slider.step = 0.1;
     slider.value = 0;
-    slider.style.flex = '1';
+    slider.style.flex = "1";
     this.timelineSlider = slider;
-    slider.addEventListener('input', () => this.setProgress(parseFloat(slider.value)));
+    slider.addEventListener("input", () =>
+      this.setProgress(parseFloat(slider.value))
+    );
 
-    const end = document.createElement('div');
-    end.style.width = '60px';
-    end.style.textAlign = 'center';
+    const end = document.createElement("div");
+    end.style.width = "60px";
+    end.style.textAlign = "center";
     end.textContent = this._formatTime(this.endTime);
     this.timelineEnd = end;
 
-    const btnContainer = document.createElement('div');
-    btnContainer.style.display = 'flex';
-    btnContainer.style.gap = '4px';
+    const btnContainer = document.createElement("div");
+    btnContainer.style.display = "flex";
+    btnContainer.style.gap = "4px";
 
-    const playBtn = document.createElement('button');
-    playBtn.textContent = '▶';
-    playBtn.onclick = () => this.play();
+    // const playBtn = document.createElement('button');
+    // playBtn.textContent = '▶';
+    // playBtn.onclick = () => this.play();
 
-    const pauseBtn = document.createElement('button');
-    pauseBtn.textContent = '⏸';
-    pauseBtn.onclick = () => this.pause();
+    // const pauseBtn = document.createElement('button');
+    // pauseBtn.textContent = '⏸';
+    // pauseBtn.onclick = () => this.pause();
 
-    btnContainer.appendChild(playBtn);
-    btnContainer.appendChild(pauseBtn);
+    // btnContainer.appendChild(playBtn);
+    // btnContainer.appendChild(pauseBtn);
 
     sliderRow.appendChild(start);
     sliderRow.appendChild(slider);
@@ -438,7 +479,7 @@ export class DroneGroupReplayPlayer {
   /** 清理 timeline */
   _clearTimeline() {
     if (this.timelineContainer) {
-      this.timelineContainer.style.display = 'none';
+      this.timelineContainer.style.display = "none";
       this.timelineContainer.parentNode?.removeChild(this.timelineContainer);
       this.timelineContainer = null;
       this.timelineSlider = null;
@@ -458,11 +499,16 @@ export class DroneGroupReplayPlayer {
       if (uav.entity) this.viewer.entities.remove(uav.entity);
       if (uav.polyline) this.viewer.entities.remove(uav.polyline);
       if (uav.label) this.viewer.entities.remove(uav.label);
+      if (uav.pathLabel) this.viewer.entities.remove(uav.pathLabel);
       if (uav.nearestLine) this.viewer.entities.remove(uav.nearestLine);
       if (uav.distanceLabel) this.viewer.entities.remove(uav.distanceLabel);
     });
 
     this.uavs.clear();
+
+    // 清除之前的计划航线
+    this.clearPlanPaths();
+
     this._clearTimeline();
 
     this.startTime = null;
@@ -473,5 +519,87 @@ export class DroneGroupReplayPlayer {
     this._nearestPositions = {};
     this._midPosition = {};
     this._distanceText = {};
+  }
+
+  /**
+   * 设置播放速度倍数
+   * @param {number} factor - 速度倍数
+   */
+  setSpeedFactor(factor) {
+    this.speedFactor = factor;
+    if (this.viewer && this.viewer.clock) {
+      // 如果当前正在播放，更新时钟的倍速
+      if (this.isPlaying) {
+        this.viewer.clock.multiplier = this.speedFactor;
+      }
+    }
+  }
+
+  /**
+   * 添加计划航线到场景中
+   * @param {Array} planPathData - 计划航线数据
+   */
+  addPlanPathsToScene(planPathData) {
+    if (!planPathData || planPathData.length === 0) return;
+
+    // 清除之前的计划航线
+    this.clearPlanPaths();
+
+    planPathData.forEach((pathInfo) => {
+      // 创建计划航线的路径点坐标
+      const positions = pathInfo.path.map((point) =>
+        Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.height)
+      );
+
+      // 添加计划航线实体到场景中
+      const planPathEntity = this.viewer.entities.add({
+        name: `${pathInfo.id} 计划航线`,
+        polyline: {
+          positions: positions,
+          width: 3,
+          material: Cesium.Color.RED.withAlpha(0.8), // 使用绿色表示计划航线
+          clampToGround: false,
+        },
+      });
+
+      // 计算路径中心点用于标签位置
+      const centerIndex = Math.floor(positions.length / 2);
+      const centerPosition = positions[centerIndex];
+
+      // 添加标签标识这是计划航线
+      const labelEntity = this.viewer.entities.add({
+        name: `${pathInfo.id} 计划航线标签`,
+        position: centerPosition,
+        label: {
+          text: `${pathInfo.id} 计划航线`,
+          font: "14pt sans-serif",
+          fillColor: Cesium.Color.LIME,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -10),
+          scale: 0.8,
+        },
+      });
+
+      // 将计划航线实体保存到一个数组中，以便后续清理
+      if (!this.planPathEntities) {
+        this.planPathEntities = [];
+      }
+      this.planPathEntities.push(planPathEntity, labelEntity);
+    });
+  }
+
+  /**
+   * 清除场景中的计划航线
+   */
+  clearPlanPaths() {
+    if (this.planPathEntities && this.planPathEntities.length > 0) {
+      this.planPathEntities.forEach((entity) => {
+        this.viewer.entities.remove(entity);
+      });
+      this.planPathEntities = [];
+    }
   }
 }
