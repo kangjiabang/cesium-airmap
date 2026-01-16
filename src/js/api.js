@@ -72,6 +72,11 @@ export const api = {
       },
     });
   },
+
+  // 风险分析
+  getDroneRiskAnalysis: (droneId) => {
+    return apiClient.post(`/drone-nofly-risk-analysis?drone_id=${droneId}`);
+  },
 };
 
 export default apiClient;

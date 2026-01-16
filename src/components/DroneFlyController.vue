@@ -36,6 +36,11 @@
                 <span class="btn-icon">⏹</span>
                 <span class="btn-label">停止飞行</span>
             </button>
+
+            <button @click="analyzeRisk" class="ctrl-btn risk-btn" :disabled="isFlying">
+                <span class="btn-icon">⚠️</span>
+                <span class="btn-label">风险分析</span>
+            </button>
         </div>
 
         <!-- 飞行参数配置 -->
@@ -168,7 +173,17 @@ const droneSpeed = ref(10); // ✅ 默认速度：10 米/秒
 const droneSpeedInput = ref('10');
 const droneEntity = ref(null)
 const noFlyZoneEntities = ref([])
+const secondaryPathEntities = ref([]); // 存储其他航线的实体
 let flightPathEntity = null
+
+const clearSecondaryPaths = () => {
+    if (secondaryPathEntities.value.length > 0) {
+        secondaryPathEntities.value.forEach(entity => {
+            props.viewer.entities.remove(entity);
+        });
+        secondaryPathEntities.value = [];
+    }
+};
 
 // ✅ 新增：当前飞行时间显示
 const startTime = ref(null)
@@ -216,92 +231,6 @@ watch(
     { immediate: true }
 )
 
-// 在 viewer 就绪时生成固定路径
-watch(
-    () => props.viewer,
-    (newViewer) => {
-        if (!newViewer) return;
-        if (pathPoints.value.length > 0) return;
-
-        const startLon = 119.988060;
-        const startLat = 30.282778;
-        const startHeight = 150.0;
-
-        // 三段路径参数：每段的长度（米）和方位角（从正东起算，0°=东，90°=北）
-        const legs = [
-            { length: 400, azimuthDeg: 0 },   // 向东
-            { length: 400, azimuthDeg: 30 },   // 东偏北 30°（即航向 30°）
-            { length: 400, azimuthDeg: 60 },   // 更偏北（航向 60°）
-        ];
-
-        const totalPoints = 12; // 总点数（可调整）
-
-        // 起点
-        const startCarto = Cesium.Cartographic.fromDegrees(startLon, startLat, startHeight);
-        const origin = Cesium.Cartesian3.fromRadians(startCarto.longitude, startCarto.latitude, startCarto.height);
-
-        const ellipsoid = Cesium.Ellipsoid.WGS84;
-        const normal = ellipsoid.geodeticSurfaceNormal(origin, new Cesium.Cartesian3());
-        const east = Cesium.Cartesian3.cross(Cesium.Cartesian3.UNIT_Z, normal, new Cesium.Cartesian3());
-        Cesium.Cartesian3.normalize(east, east);
-        const north = Cesium.Cartesian3.cross(normal, east, new Cesium.Cartesian3());
-        Cesium.Cartesian3.normalize(north, north);
-
-        const points = [];
-        let currentPos = origin;
-
-        // 按比例分配点数（尽量均匀）
-        const totalLength = legs.reduce((sum, leg) => sum + leg.length, 0);
-        let accumulatedPoints = 0;
-
-        legs.forEach((leg, idx) => {
-            const legPoints = Math.round((leg.length / totalLength) * totalPoints);
-            // 至少保留 2 个点（起点+终点），但首段起点已存在
-            const numSegPoints = idx === 0 ? Math.max(2, legPoints) : Math.max(1, legPoints - 1);
-
-            // 方位角转弧度
-            const azimuthRad = Cesium.Math.toRadians(leg.azimuthDeg);
-            // 方向向量 = cos(az) * east + sin(az) * north
-            const dir = new Cesium.Cartesian3();
-            Cesium.Cartesian3.multiplyByScalar(east, Math.cos(azimuthRad), dir);
-            const northComponent = Cesium.Cartesian3.multiplyByScalar(north, Math.sin(azimuthRad), new Cesium.Cartesian3());
-            Cesium.Cartesian3.add(dir, northComponent, dir);
-            Cesium.Cartesian3.normalize(dir, dir);
-
-            // 生成该段点（包括起点，但首段起点已作为 currentPos）
-            for (let i = idx === 0 ? 0 : 1; i < numSegPoints; i++) {
-                const ratio = i / (numSegPoints - 1); // 0 到 1
-                const offset = ratio * leg.length;
-                const displacement = Cesium.Cartesian3.multiplyByScalar(dir, offset, new Cesium.Cartesian3());
-                const pos = Cesium.Cartesian3.add(currentPos, displacement, new Cesium.Cartesian3());
-                points.push(pos);
-            }
-
-            // 更新 currentPos 为本段终点
-            const endDisplacement = Cesium.Cartesian3.multiplyByScalar(dir, leg.length, new Cesium.Cartesian3());
-            currentPos = Cesium.Cartesian3.add(currentPos, endDisplacement, new Cesium.Cartesian3());
-
-            // 如果是最后一段，确保最后一个点被加入（避免因四舍五入丢失）
-            if (idx === legs.length - 1 && points.length < totalPoints) {
-                points.push(currentPos);
-            }
-        });
-
-        // 去重（防止因分段导致重复点）
-        const uniquePoints = [];
-        for (const p of points) {
-            if (uniquePoints.length === 0 ||
-                !Cesium.Cartesian3.equalsEpsilon(uniquePoints[uniquePoints.length - 1], p, Cesium.Math.EPSILON6)) {
-                uniquePoints.push(p);
-            }
-        }
-
-        pathPoints.value = uniquePoints;
-        console.log('✅ 生成三条折线路径（转角 < 90°），共', uniquePoints.length, '个点');
-        drawFlightPath(uniquePoints);
-    },
-    { immediate: true }
-);
 
 function drawFlightPath(cartesianPoints) {
     // 如果已有路径，先移除（避免重复绘制）
@@ -986,8 +915,10 @@ onUnmounted(() => {
 
     // 5. 移除禁飞区实体（如果存在）
     clearNoFlyZones();
+    // 6. 移除其他航线实体
+    clearSecondaryPaths();
 
-    // 6. 终止 Worker（避免内存泄漏）
+    // 7. 终止 Worker（避免内存泄漏）
     if (buildingWorker) {
         buildingWorker.terminate();
     }
@@ -995,47 +926,92 @@ onUnmounted(() => {
     console.log('✅ DroneFlyController 已卸载，清理所有实体和资源');
 });
 
+const drawSinglePath = (cartesianPoints, colorStr, isMaster) => {
+    if (!cartesianPoints || cartesianPoints.length < 2) return;
+
+    const entity = props.viewer.entities.add({
+        name: isMaster ? '主飞行路径' : '其他航线',
+        polyline: {
+            positions: cartesianPoints,
+            width: isMaster ? 4 : 2, // 主航线更粗
+            material: new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.fromCssColorString(colorStr).withAlpha(0.8),
+                dashLength: isMaster ? 0 : 16.0 // 主路实线，其他可能虚线(可选)
+            }),
+            depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.fromCssColorString(colorStr).withAlpha(0.3)
+            })
+        }
+    });
+
+    if (isMaster) {
+        // 如果是主航线，赋值给 flightPathEntity 管理
+        flightPathEntity = entity;
+    } else {
+        // 其他航线存入列表
+        secondaryPathEntities.value.push(entity);
+    }
+    return entity;
+};
+
 const loadFlyPathFromBackend = async () => {
     if (isFlying.value) return;
 
     try {
         const response = await api.getFlightPlanPathsByDrone("c3");
 
-        const flyPathInfo = response.flyPathInfo;
-        if (!flyPathInfo || !Array.isArray(flyPathInfo.path)) {
-            alert("后端返回的轨迹数据不合法");
+        // 兼容新旧接口结构
+        const flyPathInfos = response.flyPathInfos || (response.flyPathInfo ? [response.flyPathInfo] : []);
+
+        if (!flyPathInfos || !Array.isArray(flyPathInfos) || flyPathInfos.length === 0) {
+            alert("后端返回的数据不包含有效的航线信息");
             return;
         }
 
-        // 🔥 将后端 path 转为 Cesium Cartesian3
-        const cartesianPoints = flyPathInfo.path.map(p =>
-            Cesium.Cartesian3.fromDegrees(
-                p.lon,
-                p.lat,
-                p.height
-            )
-        );
-
-        if (cartesianPoints.length < 2) {
-            alert("轨迹点数量不足，无法飞行");
-            return;
+        // 清理旧实体
+        if (flightPathEntity) {
+            props.viewer.entities.remove(flightPathEntity);
+            flightPathEntity = null;
         }
+        clearSecondaryPaths();
 
-        // ✅ 更新内部路径
-        pathPoints.value = cartesianPoints;
+        let masterPathFound = false;
 
-        // ✅ 重新绘制轨迹
-        drawFlightPath(cartesianPoints);
+        // 遍历所有航线
+        flyPathInfos.forEach(info => {
+            if (!info.path || !Array.isArray(info.path) || info.path.length < 2) return;
 
-        // ✅ 如果无人机实体还不存在，创建
-        if (!droneEntity.value) {
-            addDroneEntity();
+            // 转换坐标
+            const cartesianPoints = info.path.map(p =>
+                Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.height)
+            );
+
+            // 绘制
+            drawSinglePath(cartesianPoints, info.color || 'yellow', info.isMaster);
+
+            // 如果是主航线，更新逻辑所用的 pathPoints 并放置无人机
+            if (info.isMaster) {
+                masterPathFound = true;
+                pathPoints.value = cartesianPoints;
+
+                // 放置/更新无人机位置
+                if (!droneEntity.value) {
+                    addDroneEntity();
+                } else {
+                    droneEntity.value.position = new Cesium.ConstantPositionProperty(cartesianPoints[0]);
+                }
+
+                // 视角定位到主航线
+                // props.viewer.flyTo(droneEntity.value);
+            }
+        });
+
+        if (masterPathFound) {
+            console.log("✅ 成功加载主航线及其他参考航线");
         } else {
-            // 将无人机放到起点
-            droneEntity.value.position = new Cesium.ConstantPositionProperty(cartesianPoints[0]);
+            console.warn("⚠️ 未找到 isMaster=true 的主航线，无人机无法自动就位");
+            alert("数据中未包含主航线(isMaster=true)，无法开始飞行");
         }
-
-        console.log("✅ 成功加载无人机轨迹", flyPathInfo);
 
     } catch (err) {
         console.error("加载无人机轨迹失败:", err);
@@ -1058,7 +1034,7 @@ const loadNoFlyZones = async () => {
             if (Array.isArray(noFlyZones) && noFlyZones.length > 0) {
                 renderNoFlyZones(noFlyZones);
                 console.log(`✅ 成功加载 ${noFlyZones.length} 个禁飞区`);
-                alert(`成功加载 ${noFlyZones.length} 个禁飞区`);
+                // alert(`成功加载 ${noFlyZones.length} 个禁飞区`);
             } else {
                 console.log("没有找到禁飞区数据");
                 alert("未获取到任何禁飞区数据");
@@ -1116,6 +1092,163 @@ const clearNoFlyZones = () => {
             props.viewer.entities.remove(entity);
         });
         noFlyZoneEntities.value = [];
+    }
+};
+
+// ======================
+// 风险分析功能
+// ======================
+const riskAnalysisEntities = ref([])
+
+const clearRiskAnalysis = () => {
+    if (props.viewer && riskAnalysisEntities.value.length > 0) {
+        riskAnalysisEntities.value.forEach(entity => {
+            props.viewer.entities.remove(entity);
+        });
+        riskAnalysisEntities.value = [];
+    }
+}
+
+const analyzeRisk = async () => {
+    if (isFlying.value) return;
+
+    try {
+        clearRiskAnalysis();
+        console.log("正在进行风险分析...");
+
+        const response = await api.getDroneRiskAnalysis("C3");
+        console.log("风险分析结果:", response);
+
+        if (!response) {
+            alert("未获取到有效的风险分析数据");
+            return;
+        }
+
+        const { fly_path_risk, path_zone_risk } = response;
+        let riskCount = 0;
+
+        // 辅助绘图函数
+        const drawRiskLine = (point1, point2, riskLevel, minDistance, labelPrefix = "") => {
+            // 确定颜色
+            let color = Cesium.Color.GREEN;
+            let colorName = "安全";
+            if (riskLevel === 'warn') {
+                color = Cesium.Color.YELLOW;
+                colorName = "警告";
+            } else if (riskLevel === 'fatal') {
+                color = Cesium.Color.RED;
+                colorName = "危险";
+            }
+
+            // 转换坐标
+            const positions = [
+                Cesium.Cartesian3.fromDegrees(point1[0], point1[1], point1[2]),
+                Cesium.Cartesian3.fromDegrees(point2[0], point2[1], point2[2])
+            ];
+
+            // 1. 绘制连线
+            const lineEntity = props.viewer.entities.add({
+                name: '风险分析连线',
+                polyline: {
+                    positions: positions,
+                    width: 4,
+                    material: new Cesium.PolylineDashMaterialProperty({
+                        color: color,
+                        dashLength: 16.0
+                    }),
+                    depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+                        color: color.withAlpha(0.5),
+                    })
+                }
+            });
+            riskAnalysisEntities.value.push(lineEntity);
+
+            // 2. 绘制端点
+            positions.forEach(pos => {
+                const pointEntity = props.viewer.entities.add({
+                    position: pos,
+                    point: {
+                        pixelSize: 8,
+                        color: color,
+                        outlineColor: Cesium.Color.WHITE,
+                        outlineWidth: 2
+                    }
+                });
+                riskAnalysisEntities.value.push(pointEntity);
+            });
+
+            // 3. 添加标签
+            const midPoint = Cesium.Cartesian3.midpoint(positions[0], positions[1], new Cesium.Cartesian3());
+
+            const labelEntity = props.viewer.entities.add({
+                position: midPoint,
+                label: {
+                    text: `${labelPrefix}${colorName}\n距离: ${minDistance.toFixed(1)}m`,
+                    font: '14px sans-serif',
+                    fillColor: color,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 3,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -20),
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                }
+            });
+            riskAnalysisEntities.value.push(labelEntity);
+
+            return lineEntity; // 返回线实体用于视角定位
+        };
+
+        let firstEntity = null;
+
+        // 1. 处理路径间风险
+        if (fly_path_risk && fly_path_risk.has_risk && Array.isArray(fly_path_risk.risk_paths)) {
+            fly_path_risk.risk_paths.forEach(risk => {
+                const { nearest_points, risk_level, min_distance } = risk;
+                if (nearest_points && nearest_points.point1 && nearest_points.point2) {
+                    const entity = drawRiskLine(
+                        nearest_points.point1,
+                        nearest_points.point2,
+                        risk_level,
+                        min_distance,
+                        "[路径风险] "
+                    );
+                    if (!firstEntity) firstEntity = entity;
+                    riskCount++;
+                }
+            });
+        }
+
+        // 2. 处理禁飞区风险
+        if (path_zone_risk && path_zone_risk.closest_points && path_zone_risk.closest_points.length === 2) {
+            const { closest_points, risk_level, min_distance } = path_zone_risk;
+            const entity = drawRiskLine(
+                closest_points[0],
+                closest_points[1],
+                risk_level,
+                min_distance,
+                "[禁飞区] "
+            );
+            if (!firstEntity) firstEntity = entity;
+            riskCount++;
+        }
+
+        if (riskCount === 0) {
+            alert("当前航线安全，未发现风险点");
+        } else {
+            console.log(`共发现 ${riskCount} 处风险点`);
+            // 视角飞向第一个风险点
+            if (firstEntity) {
+                props.viewer.flyTo(firstEntity, {
+                    duration: 1.5,
+                    offset: new Cesium.HeadingPitchRange(0, -Cesium.Math.PI_OVER_FOUR, 200)
+                });
+            }
+        }
+
+    } catch (err) {
+        console.error("风险分析失败:", err);
+        alert(`风险分析失败: ${err.message || err}`);
     }
 };
 
@@ -1264,6 +1397,18 @@ const clearNoFlyZones = () => {
 .stop-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.4), rgba(185, 28, 28, 0.4));
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+}
+
+.risk-btn {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.2), rgba(202, 138, 4, 0.2));
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    grid-column: 1 / -1;
+    /* 占据整行 */
+}
+
+.risk-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.4), rgba(202, 138, 4, 0.4));
+    box-shadow: 0 0 15px rgba(234, 179, 8, 0.2);
 }
 
 .btn-icon {
